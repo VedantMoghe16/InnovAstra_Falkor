@@ -1,0 +1,13 @@
+.venv/
+**/node_modules/
+frontend/dist/
+.git/
+.claude/
+data/real/
+data/**/sar_reports/
+**/__pycache__/
+*.pyc
+frontend/
+tests/
+docs/
+*.png

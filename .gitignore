@@ -1,0 +1,27 @@
+__pycache__/
+*.pyc
+*.pyo
+node_modules/
+dist/
+.DS_Store
+.env
+*.egg-info/
+.vite/
+*.local
+
+# Generated pipeline outputs — regenerate via `python src/run_pipeline.py`
+data/*
+!data/README.md
+!data/real/
+data/real/*/*.csv
+data/real/*/*.parquet
+
+# Editor
+.idea/
+.vscode/
+
+# Python virtualenv
+.venv/
+
+# Artefacts trained on the prajna cluster (compare before promoting into data/)
+data_prajna/

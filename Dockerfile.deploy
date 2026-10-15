@@ -1,0 +1,34 @@
+# Cloud image for the live demo: ships the PREBUILT pipeline artefacts (no retraining
+# at build time) and talks to an external FalkorDB (e.g. FalkorDB Cloud).
+#
+#   python src/run_pipeline.py && scripts/load_falkor.sh      # locally, once
+#   docker build -f Dockerfile.deploy -t rudra-api .            # build context = repo, incl. data/
+#
+# Runtime env: ANTHROPIC_API_KEY, FALKORDB_HOST/PORT/USERNAME/PASSWORD[/TLS], PORT (platform-provided),
+#              FALKORDB_LOAD_LIMIT (e.g. 60000 for a 100 MB FalkorDB Cloud free tier).
+FROM python:3.11-slim
+
+WORKDIR /app
+RUN apt-get update && apt-get install -y --no-install-recommends libgomp1 \
+    && rm -rf /var/lib/apt/lists/*
+
+COPY requirements.txt .
+RUN pip install --no-cache-dir -r requirements.txt
+
+COPY src/ ./src/
+COPY backend/ ./backend/
+COPY scripts/deploy_entrypoint.sh ./scripts/
+COPY data/README.md ./data/
+COPY data/ibm_aml/ ./data/ibm_aml/
+COPY data/ml/ibm_aml/ ./data/ml/ibm_aml/
+COPY data/collusion/ ./data/collusion/
+
+ENV PYTHONUNBUFFERED=1 \
+    RUDRA_DATASET=ibm_aml \
+    STREAM_BACKEND=inproc \
+    RUDRA_SKIP_WARM=1 \
+    FALKORDB_GRAPH=rudra
+
+EXPOSE 8000
+# Waits for FalkorDB, self-loads the context graph if empty, then serves the API.
+CMD ["sh", "scripts/deploy_entrypoint.sh"]

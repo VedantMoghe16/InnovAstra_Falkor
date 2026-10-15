@@ -1,0 +1,24 @@
+# Backend Dockerfile — RUDRA detection engine + FastAPI
+FROM python:3.11-slim
+
+WORKDIR /app
+
+# System deps for xgboost / torch / reportlab
+RUN apt-get update && apt-get install -y --no-install-recommends \
+        gcc g++ libgomp1 \
+    && rm -rf /var/lib/apt/lists/*
+
+COPY requirements.txt .
+RUN pip install --no-cache-dir -r requirements.txt
+
+# Source
+COPY src/ ./src/
+COPY backend/ ./backend/
+COPY data/README.md ./data/
+# data/ (raw CSVs + generated artefacts) is bind-mounted by docker-compose at
+# runtime. Generate it once with `python src/run_pipeline.py` on the host, or
+# `docker compose run --rm backend python src/run_pipeline.py`.
+
+EXPOSE 8000
+
+CMD ["uvicorn", "main:app", "--app-dir", "backend", "--host", "0.0.0.0", "--port", "8000"]

@@ -1,0 +1,134 @@
+version: '3.9'
+
+# RUDRA — one-command local stack
+#
+#   docker compose up
+#
+# Backend  → http://localhost:8000
+# Frontend → http://localhost:5173
+# FalkorDB → localhost:6379 (graph DB) / http://localhost:3000 (FalkorDB Browser)
+#
+# Load the context graph for the Investigator agent (once, after the pipeline):
+#   docker compose exec backend python src/graphdb/falkor_loader.py --reset
+# Kafka    → kafka:9092 (inside the network) / localhost:29092 (from the host)
+#
+# Active dataset is RUDRA_DATASET (default: ibm_aml). PaySim is supported
+# as a secondary benchmark when its CSV is dropped under data/real/paysim/.
+#
+# To regenerate data inside the running backend container:
+#   docker compose exec backend python src/run_pipeline.py --dataset ibm_aml
+#
+# To stream over Kafka from inside the container (uses active variant by default):
+#   docker compose exec backend python -m streaming.kafka_producer --rate 10 --total 500
+
+services:
+  backend:
+    build:
+      context: .
+      dockerfile: Dockerfile.backend
+    image: rudra-backend:latest
+    container_name: rudra-backend
+    ports:
+      - "8000:8000"
+    environment:
+      - PYTHONUNBUFFERED=1
+      - ANTHROPIC_API_KEY=${ANTHROPIC_API_KEY:-}
+      # Active dataset — controls which data dir + ML variant the backend binds to
+      - RUDRA_DATASET=${RUDRA_DATASET:-ibm_aml}
+      # Streaming — kafka by default inside the compose network
+      - STREAM_BACKEND=${STREAM_BACKEND:-auto}
+      - KAFKA_BOOTSTRAP_SERVERS=${KAFKA_BOOTSTRAP_SERVERS:-kafka:9092}
+      - KAFKA_TOPIC=${KAFKA_TOPIC:-rudra.transactions}
+      # AA / KYC adapters — falls back to mock when these are unset
+      - SAHAMATI_CLIENT_ID=${SAHAMATI_CLIENT_ID:-}
+      - SAHAMATI_CLIENT_SECRET=${SAHAMATI_CLIENT_SECRET:-}
+      - SAHAMATI_FIU_ID=${SAHAMATI_FIU_ID:-}
+      - DILISENSE_API_KEY=${DILISENSE_API_KEY:-}
+      # SAR filing institution — shown verbatim in every SAR PDF
+      - BANK_NAME=${BANK_NAME:-}
+      - COMPLIANCE_OFFICER=${COMPLIANCE_OFFICER:-}
+      # FalkorDB context graph for the Investigator agent
+      - FALKORDB_HOST=${FALKORDB_HOST:-falkordb}
+      - FALKORDB_PORT=${FALKORDB_PORT:-6379}
+      - FALKORDB_USERNAME=${FALKORDB_USERNAME:-}
+      - FALKORDB_PASSWORD=${FALKORDB_PASSWORD:-}
+      - FALKORDB_GRAPH=${FALKORDB_GRAPH:-rudra}
+      - RUDRA_AGENT_MODEL=${RUDRA_AGENT_MODEL:-claude-sonnet-5-5}
+      - RUDRA_AGENT_TRANSPORT=${RUDRA_AGENT_TRANSPORT:-mcp}
+    volumes:
+      # Persist generated data across restarts
+      - ./data:/app/data
+    depends_on:
+      kafka:
+        condition: service_healthy
+      falkordb:
+        condition: service_healthy
+    healthcheck:
+      # Gate readiness on the brain being loaded (graph + alerts), not just the
+      # process being up — /api/health probes every subsystem.
+      test: ["CMD-SHELL", "python -c \"import urllib.request,json,sys; d=json.load(urllib.request.urlopen('http://localhost:8000/api/health')); sys.exit(0 if d.get('status')=='ok' else 1)\" || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 40s
+
+  frontend:
+    build:
+      context: .
+      dockerfile: Dockerfile.frontend
+    image: rudra-frontend:latest
+    container_name: rudra-frontend
+    ports:
+      - "5173:80"
+    depends_on:
+      - backend
+
+  # Real Kafka broker — single-node KRaft mode (no Zookeeper).
+  # Production swaps this for a multi-broker cluster managed by Confluent / MSK.
+  kafka:
+    image: bitnami/kafka:3.7
+    container_name: rudra-kafka
+    ports:
+      # Internal listener for other compose services
+      - "9092:9092"
+      # External listener for host-side producers (python -m streaming.kafka_producer from your laptop)
+      - "29092:29092"
+    environment:
+      # KRaft (no ZK) — one node is also its own controller
+      - KAFKA_CFG_NODE_ID=1
+      - KAFKA_CFG_PROCESS_ROLES=controller,broker
+      - KAFKA_CFG_CONTROLLER_QUORUM_VOTERS=1@kafka:9093
+      - KAFKA_CFG_CONTROLLER_LISTENER_NAMES=CONTROLLER
+      - KAFKA_CFG_LISTENERS=PLAINTEXT://:9092,CONTROLLER://:9093,EXTERNAL://:29092
+      - KAFKA_CFG_ADVERTISED_LISTENERS=PLAINTEXT://kafka:9092,EXTERNAL://localhost:29092
+      - KAFKA_CFG_LISTENER_SECURITY_PROTOCOL_MAP=CONTROLLER:PLAINTEXT,PLAINTEXT:PLAINTEXT,EXTERNAL:PLAINTEXT
+      - KAFKA_CFG_INTER_BROKER_LISTENER_NAME=PLAINTEXT
+      - KAFKA_CFG_AUTO_CREATE_TOPICS_ENABLE=true
+      - ALLOW_PLAINTEXT_LISTENER=yes
+    healthcheck:
+      test: ["CMD-SHELL", "kafka-topics.sh --list --bootstrap-server kafka:9092 >/dev/null 2>&1 || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+      start_period: 30s
+    volumes:
+      - kafka-data:/bitnami/kafka
+
+  # FalkorDB — the agent's context graph (evidence + investigation memory).
+  falkordb:
+    image: falkordb/falkordb:latest
+    container_name: rudra-falkordb
+    ports:
+      - "6379:6379"   # graph DB (Redis protocol)
+      - "3000:3000"   # FalkorDB Browser
+    volumes:
+      - falkordb-data:/var/lib/falkordb/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+
+volumes:
+  kafka-data:
+  falkordb-data:
