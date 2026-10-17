@@ -97,9 +97,9 @@ def envelope(tool: str, cypher: str, params: Dict, rows: List[Dict], ms: float,
 SCHEMA_DOC = {
     "evidence_layer": {
         "(:Account)": "id, name, type (individual|business|shell_company), branch, risk_score, risk_level, pr (algo.pageRank), community (algo.WCC id), lp_community (algo.labelPropagation id), source (ibm|identity), is_mule",
-        "(:Account)-[:TXN]->(:Account)": "one edge per transaction: tid (int), ts (epoch s), amount, rail, currency, is_fraud (IBM label), ml_score (pair-level stacked-ensemble fraud score 0-1)",
-        "(:Alert)-[:FLAGS]->(:Account)": "alert_id, pattern_type, severity, confidence, tier (1=ML+rule agree, 2=ML only, 3=rule), ml_score, total_flow, description",
-        "(:Incident)-[:CONTAINS]->(:Alert)": "incident_id, primary_pattern, severity, total_flow, alert_count",
+        "(:Account)-[:TXN]->(:Account)": "one edge per transaction: tid (int), ts (epoch s), amount + currency (native), amount_usd (USD-equivalent, fixed reference rates - ALWAYS compare/sum this), rail, is_fraud (IBM label), ml_score (pair-level stacked-ensemble fraud score 0-1)",
+        "(:Alert)-[:FLAGS]->(:Account)": "alert_id, pattern_type, severity, confidence, tier (1=ML+rule agree, 2=ML only, 3=rule), ml_score, total_flow_usd, description",
+        "(:Incident)-[:CONTAINS]->(:Alert)": "incident_id, primary_pattern, severity, total_flow_usd, alert_count",
         "(:Account)-[:USES|FROM_IP|HAS_KYC]->(:Device|:IP|:KYC)": "identity lane (synthetic identity dataset, ACC##### accounts)",
     },
     "memory_layer": {
@@ -130,8 +130,8 @@ def list_incidents(graph, severity: Optional[str] = None, limit: int = 10) -> Di
 MATCH (i:Incident)
 {where}
 RETURN i.incident_id AS incident_id, i.primary_pattern AS pattern, i.severity AS severity,
-       i.total_flow AS total_flow, i.alert_count AS alerts, i.n_entities AS accounts
-ORDER BY i.total_flow DESC LIMIT {limit}"""
+       i.total_flow_usd AS total_flow_usd, i.alert_count AS alerts, i.n_entities AS accounts
+ORDER BY i.total_flow_usd DESC LIMIT {limit}"""
     params = {"severity": severity.upper()} if severity else {}
     rows, ms, to = _run(graph, cypher, params)
     return envelope("list_incidents", cypher, params, rows, ms, timed_out=to)
@@ -143,9 +143,9 @@ MATCH (i:Incident {incident_id: $id})-[:CONTAINS]->(al:Alert)
 OPTIONAL MATCH (al)-[:FLAGS]->(a:Account)
 WITH i, al, collect(DISTINCT a.id) AS accts
 RETURN i.incident_id AS incident_id, i.primary_pattern AS pattern, i.severity AS severity,
-       i.total_flow AS total_flow,
+       i.total_flow_usd AS total_flow_usd,
        collect({alert_id: al.alert_id, pattern: al.pattern_type, tier: al.tier, severity: al.severity,
-                ml_score: al.ml_score, total_flow: al.total_flow, accounts: accts}) AS alerts"""
+                ml_score: al.ml_score, total_flow_usd: al.total_flow_usd, accounts: accts}) AS alerts"""
     params = {"id": incident_id}
     rows, ms, to = _run(graph, cypher, params)
     metrics = {}
@@ -165,17 +165,17 @@ def account_profile(graph, account_id: str) -> Dict:
     cypher = """
 MATCH (a:Account {id: $id})
 OPTIONAL MATCH (a)-[o:TXN]->()
-WITH a, count(o) AS out_n, sum(o.amount) AS out_amt, max(o.ml_score) AS max_out_ml,
+WITH a, count(o) AS out_n, sum(o.amount_usd) AS out_usd, max(o.ml_score) AS max_out_ml,
      sum(CASE WHEN o.is_fraud THEN 1 ELSE 0 END) AS out_fraud
 OPTIONAL MATCH ()-[i:TXN]->(a)
-WITH a, out_n, out_amt, max_out_ml, out_fraud, count(i) AS in_n, sum(i.amount) AS in_amt,
+WITH a, out_n, out_usd, max_out_ml, out_fraud, count(i) AS in_n, sum(i.amount_usd) AS in_usd,
      max(i.ml_score) AS max_in_ml, sum(CASE WHEN i.is_fraud THEN 1 ELSE 0 END) AS in_fraud
 OPTIONAL MATCH (al:Alert)-[:FLAGS]->(a)
 OPTIONAL MATCH (a)-[wr:ON_WATCHLIST]->(wl:Watchlist)
 RETURN a.id AS id, a.name AS name, a.type AS type, a.branch AS branch, a.source AS source,
        a.review_status AS review_status, collect(DISTINCT wl.name) AS watchlists,
        a.risk_score AS risk_score, a.risk_level AS risk_level, a.pr AS pagerank, a.community AS community,
-       out_n, out_amt, in_n, in_amt, out_fraud + in_fraud AS labelled_fraud_txns,
+       out_n, out_usd, in_n, in_usd, out_fraud + in_fraud AS labelled_fraud_txns,
        CASE WHEN max_out_ml > max_in_ml THEN max_out_ml ELSE max_in_ml END AS max_ml_score,
        collect(DISTINCT {alert_id: al.alert_id, pattern: al.pattern_type, tier: al.tier,
                          severity: al.severity, ml_score: al.ml_score})[0..10] AS alerts"""
@@ -198,7 +198,7 @@ def k_hop_neighbourhood(graph, account_id: str, k: int = 2, min_amount: float = 
     limit = _clamp(limit, 1, 200, 60)
     cypher = f"""
 MATCH p = (a:Account {{id: $id}})-[:TXN*1..{k}]-(b:Account)
-WHERE all(r IN relationships(p) WHERE r.amount >= $min_amount)
+WHERE all(r IN relationships(p) WHERE r.amount_usd >= $min_amount)
 WITH b, min(length(p)) AS hops
 MATCH (b)
 OPTIONAL MATCH (al:Alert)-[:FLAGS]->(b)
@@ -225,18 +225,18 @@ def trace_funds(graph, account_id: str, direction: str = "forward", max_hops: in
             "rs[i+1].ts > rs[i].ts AND rs[i+1].ts - rs[i].ts <= $window_s"
     cypher = f"""
 MATCH p = {pat}
-WHERE x <> a AND all(r IN relationships(p) WHERE r.amount >= $min_amount)
+WHERE x <> a AND all(r IN relationships(p) WHERE r.amount_usd >= $min_amount)
 WITH p, relationships(p) AS rs, nodes(p) AS ns
 WHERE all(i IN range(0, size(rs) - 2) WHERE {order}
-        AND rs[i+1].amount >= rs[i].amount * $keep_lo AND rs[i+1].amount <= rs[i].amount * $keep_hi)
+        AND rs[i+1].amount_usd >= rs[i].amount_usd * $keep_lo AND rs[i+1].amount_usd <= rs[i].amount_usd * $keep_hi)
 UNWIND ns AS n
 WITH p, rs, ns, count(DISTINCT n) AS uniq
 WHERE uniq = size(ns)
 RETURN [n IN ns | n.id] AS path,
-       [r IN rs | {{tid: r.tid, from: startNode(r).id, to: endNode(r).id, ts: r.ts, amount: r.amount,
-                   rail: r.rail, ml: r.ml_score, fraud: r.is_fraud}}] AS hops,
+       [r IN rs | {{tid: r.tid, from: startNode(r).id, to: endNode(r).id, ts: r.ts, amount_usd: r.amount_usd,
+                   amount: r.amount, currency: r.currency, rail: r.rail, ml: r.ml_score, fraud: r.is_fraud}}] AS hops,
        size(rs) AS length
-ORDER BY length DESC, hops[size(hops) - 1].amount DESC LIMIT {limit}"""
+ORDER BY length DESC, hops[size(hops) - 1].amount_usd DESC LIMIT {limit}"""
     params = {"id": account_id, "window_s": int(float(window_hours) * 3600),
               "keep_lo": float(keep_lo), "keep_hi": float(keep_hi), "min_amount": float(min_amount or 0)}
     rows, ms, to = _run(graph, cypher, params)
@@ -259,21 +259,21 @@ def find_cycles(graph, account_id: str, max_len: int = 6, min_amount: float = 0.
     cypher = f"""
 MATCH p = (a:Account {{id: $id}})-[:TXN*1..{n}]->(x:Account)-[:TXN]->(a)
 WITH p, relationships(p) AS rs, nodes(p) AS ns
-WHERE all(r IN rs WHERE r.amount >= $min_amount) {tclause}
+WHERE all(r IN rs WHERE r.amount_usd >= $min_amount) {tclause}
 UNWIND ns[0..size(ns) - 1] AS m
 WITH p, rs, ns, count(DISTINCT m) AS uniq
 WHERE uniq = size(ns) - 1
 RETURN [m IN ns | m.id] AS cycle, size(rs) AS length,
-       reduce(s = 0.0, r IN rs | s + r.amount) AS total_flow,
-       [r IN rs | r.tid] AS tids, [r IN rs | r.amount] AS amounts,
+       reduce(s = 0.0, r IN rs | s + r.amount_usd) AS total_flow_usd,
+       [r IN rs | r.tid] AS tids, [r IN rs | r.amount_usd] AS amounts_usd, [r IN rs | r.currency] AS currencies,
        (reduce(mx = rs[0].ts, r IN rs | CASE WHEN r.ts > mx THEN r.ts ELSE mx END)
         - reduce(mn = rs[0].ts, r IN rs | CASE WHEN r.ts < mn THEN r.ts ELSE mn END)) / 3600.0 AS span_hours
-ORDER BY total_flow DESC LIMIT {limit}"""
+ORDER BY total_flow_usd DESC LIMIT {limit}"""
     params = {"id": account_id, "min_amount": float(min_amount or 0)}
     rows, ms, to = _run(graph, cypher, params, timeout=4000)
     return envelope("find_cycles", cypher, params, rows, ms,
                     metrics={"cycle_found": bool(rows), "cycles": len(rows),
-                             "max_cycle_flow": max([r["total_flow"] for r in rows] or [0.0])},
+                             "max_cycle_flow": max([r["total_flow_usd"] for r in rows] or [0.0])},
                     timed_out=to)
 
 
@@ -284,7 +284,7 @@ MATCH (a:Account {{id: $source}}), (b:Account {{id: $target}})
 WITH a, b, shortestPath((a)-[:TXN*1..{h}]->(b)) AS p
 WHERE p IS NOT NULL
 RETURN [n IN nodes(p) | n.id] AS path,
-       [r IN relationships(p) | {{tid: r.tid, amount: r.amount, ts: r.ts, ml: r.ml_score}}] AS hops,
+       [r IN relationships(p) | {{tid: r.tid, amount_usd: r.amount_usd, currency: r.currency, ts: r.ts, ml: r.ml_score}}] AS hops,
        length(p) AS length"""
     params = {"source": source_id, "target": target_id}
     rows, ms, to = _run(graph, cypher, params)
@@ -321,6 +321,29 @@ ORDER BY pagerank DESC"""
         cypher = f"MATCH (n:Account) RETURN n.id AS account, n.type AS type, n.pr AS pagerank ORDER BY n.pr DESC LIMIT {limit}"
         rows, ms, to = _run(graph, cypher, {})
     return envelope("pagerank_hubs", cypher, {}, rows, ms, timed_out=to)
+
+
+def apply_fx(graph) -> Dict:
+    """Write USD-equivalent amounts: TXN.amount_usd for every transaction, and
+    Alert/Incident.total_flow_usd = USD value of the transactions among the
+    accounts they flag (the pipeline's total_flow sums mixed currencies)."""
+    from graphdb.fx import FX_USD, FX_LABEL
+    t0 = time.time()
+    graph.query("MATCH ()-[t:TXN]->() SET t.amount_usd = t.amount * coalesce($fx[t.currency], 1.0)",
+                {"fx": FX_USD}, timeout=300000)
+    graph.query("""
+MATCH (al:Alert)
+OPTIONAL MATCH (al)-[:FLAGS]->(a:Account)-[t:TXN]->(b:Account)<-[:FLAGS]-(al)
+WITH al, sum(t.amount_usd) AS usd
+SET al.total_flow_usd = coalesce(usd, 0.0)""", timeout=300000)
+    graph.query("""
+MATCH (i:Incident)-[:CONTAINS]->(:Alert)-[:FLAGS]->(a:Account)
+WITH i, collect(DISTINCT a) AS accts
+UNWIND accts AS a
+OPTIONAL MATCH (a)-[t:TXN]->(b:Account) WHERE b IN accts
+WITH i, sum(t.amount_usd) AS usd
+SET i.total_flow_usd = coalesce(usd, 0.0)""", timeout=300000)
+    return {"label": FX_LABEL, "seconds": round(time.time() - t0, 1)}
 
 
 ANALYTICS = (
@@ -721,8 +744,8 @@ def subgraph_for(graph, account_ids: Sequence[str] = (), tids: Sequence[int] = (
     among cited accounts, and identity hubs (device/IP/KYC) they share."""
     accts = list(dict.fromkeys(account_ids or []))[:100]
     tids = [int(t) for t in (tids or [])][:400]
-    cols = ("RETURN s.id AS source, d.id AS target, t.tid AS tid, t.amount AS amount, t.ts AS ts, "
-            "t.is_fraud AS is_fraud, t.ml_score AS ml_score")
+    cols = ("RETURN s.id AS source, d.id AS target, t.tid AS tid, t.amount_usd AS amount_usd, "
+            "t.amount AS amount, t.currency AS currency, t.ts AS ts, t.is_fraud AS is_fraud, t.ml_score AS ml_score")
     links: Dict[int, Dict] = {}
     ms = 0.0
     if tids:

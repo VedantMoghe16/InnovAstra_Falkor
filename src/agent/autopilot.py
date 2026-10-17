@@ -90,8 +90,10 @@ def interpret(tool: str, env: Dict, acct: str, frontier: Frontier) -> Optional[T
         c = data[0]
         for member in c["cycle"][1:-1]:
             frontier.push(member, 3.0, f"on the same {c['length']}-hop cycle as {_short(acct)}", c["tids"])
+        cur = sorted(set(c.get("currencies") or []))
         return (f"{acct} sits on a {c['length']}-hop round-trip {' -> '.join(c['cycle'])} moving "
-                f"{_fmt(c['total_flow'])} over {c['span_hours']:.1f}h.", "GRAPH", c["tids"], c["cycle"])
+                f"USD {_fmt(c['total_flow_usd'])} (USD-equivalent{', mixed ' + '/'.join(cur) if len(cur) > 1 else ''}) "
+                f"over {c['span_hours']:.1f}h.", "GRAPH", c["tids"], c["cycle"])
     if tool == "trace_funds":
         if not rows:
             return (f"No time-ordered, amount-preserving onward chain leaves {acct} - funds do not appear to be "
@@ -101,7 +103,9 @@ def interpret(tool: str, env: Dict, acct: str, frontier: Frontier) -> Optional[T
         landing = c["path"][-1]
         fraud = sum(1 for h in c["hops"] if h.get("fraud"))
         frontier.push(landing, 2.5 + 0.3 * fraud, f"where money traced from {_short(acct)} lands", tids)
-        return (f"Money leaving {acct} moves {c['length']} hops onward in time order with amounts preserved: "
+        first, last = c["hops"][0], c["hops"][-1]
+        return (f"Money leaving {acct} moves {c['length']} hops onward in time order with USD-equivalent amounts "
+                f"preserved (USD {_fmt(first.get('amount_usd'))} -> USD {_fmt(last.get('amount_usd'))}): "
                 f"{' -> '.join(c['path'])}.", "GRAPH", tids, c["path"])
     if tool == "k_hop_neighbourhood" and rows:
         fl = sorted([r for r in data if r.get("alerts")], key=lambda r: -(r.get("alerts") or 0))
@@ -176,7 +180,7 @@ async def graph_driven_loop(sess, question: str, graph_tools: bool, step_event: 
             top = alerts[0]
             yield await record(
                 f"Incident {inc_id} ({d['severity']}, {typology}) groups {len(d['alerts'])} alerts moving "
-                f"{_fmt(d.get('total_flow'))}; strongest alert {top['alert_id']} tier {top.get('tier')} "
+                f"USD {_fmt(d.get('total_flow_usd'))} (USD-equivalent); strongest alert {top['alert_id']} tier {top.get('tier')} "
                 f"ML {float(top.get('ml_score') or 0):.2f}.",
                 "RULE" if top.get("tier") in (1, 3) else "ML", [], top.get("accounts", []), float(top.get("ml_score") or 0.5))
             if key_account:

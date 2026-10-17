@@ -231,7 +231,9 @@ def load(variant: str = "ibm_aml", limit: Optional[int] = None, reset: bool = Fa
     _write(graph, Q_INCIDENTS, rows["incidents"], 2000, "incidents")
     _write(graph, Q_IDENTITY, rows["identity"], 500, "identity")
     _write(graph, Q_PLAYBOOKS, rows["playbooks"], 100, "playbooks")
-    from graphdb.queries import refresh_graph_analytics
+    from graphdb.queries import refresh_graph_analytics, apply_fx
+    fx = apply_fx(graph)
+    print(f"  fx         amount_usd on every TXN + USD flows on alerts/incidents in {fx['seconds']}s ({fx['label']})")
     for r in refresh_graph_analytics(graph)["data"]:
         print(f"  algo.{r['algorithm']:<18} {r['accounts']:>7,} accounts in {r['ms'] / 1000:5.1f}s (in FalkorDB)")
     counts = verify(graph)

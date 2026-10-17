@@ -41,6 +41,7 @@ def g():
         pass
     graph = db.select_graph(GRAPH)
     graph.query(FIXTURE)
+    Q.apply_fx(graph)
     ensure_schema(graph)
     yield graph
     graph.delete()

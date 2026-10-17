@@ -18,7 +18,7 @@ Rules, evaluated in order:
                     confidence >= 85, mirroring fatf_typology._legal_basis);
                     otherwise downgraded to `escalate` and re-checked by P1.
   P1 escalate       needs tier-1 corroboration, ML >= 0.80, a cycle moving
-                    >= 2 lakh, or a shared-identifier ring of >= 3; otherwise
+                    >= USD 10k (USD-equivalent), or a shared-identifier ring of >= 3; otherwise
                     downgraded to `open_case`.
   P3 low impact     monitor / request_edd are reversible: EXECUTED autonomously
                     (account goes on a watchlist in the graph, fully logged).
@@ -38,7 +38,7 @@ AUTONOMOUS = ("monitor", "request_edd")   # reversible: agent may execute itself
 ACTIONS = ("escalate", "draft_str") + LOW_IMPACT + DOWNWARD
 
 ESCALATE_ML = 0.80
-ESCALATE_CYCLE_FLOW = 200_000.0
+ESCALATE_CYCLE_FLOW = 10_000.0   # USD-equivalent (FATF-style 10k reporting scale)
 ESCALATE_RING = 3
 STR_CONFIDENCE = 85.0
 PRECEDENT_WINDOW_DAYS = 30
@@ -57,7 +57,7 @@ def _escalation_basis(ev: Dict) -> Optional[str]:
     if float(ev.get("max_ml_score") or 0) >= ESCALATE_ML:
         return f"ensemble ML score {float(ev['max_ml_score']):.2f} >= {ESCALATE_ML}"
     if ev.get("cycle_found") and float(ev.get("total_flow") or 0) >= ESCALATE_CYCLE_FLOW:
-        return f"closed fund cycle moving {float(ev['total_flow']):,.0f} (>= {ESCALATE_CYCLE_FLOW:,.0f})"
+        return f"closed fund cycle moving USD {float(ev['total_flow']):,.0f} (>= USD {ESCALATE_CYCLE_FLOW:,.0f}, USD-equivalent)"
     if int(ev.get("ring_size") or 0) >= ESCALATE_RING:
         return f"shared-identifier ring of {int(ev['ring_size'])} accounts"
     return None

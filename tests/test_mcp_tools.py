@@ -36,6 +36,7 @@ def g():
         pass
     graph = db.select_graph("rudra_test")
     graph.query(FIXTURE)
+    Q.apply_fx(graph)
     ensure_schema(graph, fulltext=True)
     yield graph
     graph.delete()
@@ -81,7 +82,7 @@ def test_cycles_in_order(g):
     assert env["metrics"]["cycle_found"]
     c = env["data"][0]
     assert c["cycle"] == ["A", "B", "C", "A"] and c["tids"] == [1, 2, 3]
-    assert c["total_flow"] == pytest.approx(870000.0)
+    assert c["total_flow_usd"] == pytest.approx(870000.0)  # fixture has no currency -> USD
     assert not Q.find_cycles(g, "D")["metrics"]["cycle_found"]
 
 
@@ -219,3 +220,15 @@ def test_decision_trail_graph(g):
     assert {"FOUND", "SUPPORTED_BY", "IN", "CAUSED_BY", "TARGETS"} <= rels
     ids = {n["id"] for n in t["nodes"]}
     assert all(l["source"] in ids and l["target"] in ids for l in t["links"])
+
+
+def test_fx_makes_amounts_comparable(g):
+    from graphdb.fx import FX_USD
+    g.query("MATCH (a:Account {id:'D'}), (e:Account {id:'E'}) "
+            "CREATE (a)-[:TXN {tid: 77, ts: 5000, amount: 1000000.0, currency: 'RUB', is_fraud: false, ml_score: 0.1}]->(e)")
+    Q.apply_fx(g)
+    usd = g.ro_query("MATCH ()-[t:TXN {tid: 77}]->() RETURN t.amount_usd").result_set[0][0]
+    assert usd == pytest.approx(1000000.0 * FX_USD["RUB"])
+    inc = Q.get_incident(g, "INC-T1")["data"][0]
+    assert inc["total_flow_usd"] > 0 and "total_flow" not in inc
+    g.query("MATCH ()-[t:TXN {tid: 77}]->() DELETE t")

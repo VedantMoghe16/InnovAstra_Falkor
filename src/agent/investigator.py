@@ -80,6 +80,8 @@ Method (follow it):
    supervisor decided earlier - and watchlists; respect them.
 7. submit_verdict.
 
+Amounts: transactions are in many currencies. amount_usd / total_flow_usd are USD-equivalent at fixed
+reference rates - compare and add ONLY those, and say "USD-equivalent". Never label amounts as INR or sum native amounts.
 Rules: never invent ids - only cite tids/accounts that appeared in tool output. An empty result is evidence
 (e.g. "no cycle within 6 hops"). Amounts are in the transaction currency. Be concise between tool calls;
 one short sentence on why you are calling the next tool. You may only recommend CLEAR - you cannot close cases.

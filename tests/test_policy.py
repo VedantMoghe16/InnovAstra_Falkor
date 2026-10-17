@@ -53,7 +53,7 @@ def test_escalate_allowed_on_graph_or_ml_evidence(ev):
 
 
 def test_escalate_downgraded_without_evidence():
-    d = decide("escalate", _ev(max_ml_score=0.5, cycle_found=True, total_flow=10_000))
+    d = decide("escalate", _ev(max_ml_score=0.5, cycle_found=True, total_flow=5_000))
     assert d["action_final"] == "open_case"
     assert d["policy_rule"] == "P1_escalate_downgraded"
     assert d["status"] == "proposed"

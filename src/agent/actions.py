@@ -60,10 +60,11 @@ def build_str_text(graph, investigation_id: str, narrative: str = "") -> str:
     if tids:
         rows, _, _ = Q._run(graph, """
 MATCH ()-[t:TXN]->() WHERE t.tid IN $tids
-RETURN t.tid AS tid, startNode(t).id AS s, endNode(t).id AS d, t.amount AS amount, t.ts AS ts, t.rail AS rail
+RETURN t.tid AS tid, startNode(t).id AS s, endNode(t).id AS d, t.amount AS amount, t.currency AS cur,
+       t.amount_usd AS usd, t.ts AS ts, t.rail AS rail
 ORDER BY ts LIMIT 40""",
                             {"tids": tids})
-        txn_lines = [f"  TXN {r['tid']}: {r['s']} -> {r['d']}  {r['amount']:,.2f}  "
+        txn_lines = [f"  TXN {r['tid']}: {r['s']} -> {r['d']}  {r['cur'] or ''} {r['amount']:,.2f} (USD {r['usd'] or 0:,.2f})  "
                      f"{time.strftime('%Y-%m-%d %H:%M', time.gmtime(r['ts']))}  {r['rail']}" for r in rows]
     by_prov: Dict[str, List[str]] = {}
     for f in findings:

@@ -73,7 +73,7 @@ export default function EvidenceGraph({ data, height = 360 }) {
             linkWidth={(l) => (l.cited ? 2 : 0.8)}
             linkDirectionalArrowLength={(l) => (l.identity ? 0 : 4)}
             linkDirectionalArrowRelPos={1}
-            linkLabel={(l) => (l.identity ? `shares ${l.kind}` : `tid ${l.tid} | ${Number(l.amount).toLocaleString('en-IN')} | ML ${Number(l.ml_score || 0).toFixed(2)}`)}
+            linkLabel={(l) => (l.identity ? `shares ${l.kind}` : `tid ${l.tid} | USD ${Math.round(Number(l.amount_usd || 0)).toLocaleString('en-IN')} (${l.currency || 'USD'} ${Math.round(Number(l.amount || 0)).toLocaleString('en-IN')}) | ML ${Number(l.ml_score || 0).toFixed(2)}`)}
             linkDirectionalParticles={(l) => (l.cited ? 2 : 0)}
             linkDirectionalParticleWidth={2}
             linkDirectionalParticleColor={() => '#a6d65c'}

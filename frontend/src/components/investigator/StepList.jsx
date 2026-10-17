@@ -12,7 +12,7 @@ function summarise(step) {
   const m = step.metrics || {};
   switch (step.tool) {
     case 'find_cycles':
-      return m.cycle_found ? `${m.cycles} cycle(s), largest moves ${fmt(m.max_cycle_flow)}` : 'No cycle found';
+      return m.cycle_found ? `${m.cycles} cycle(s), largest moves USD ${fmt(m.max_cycle_flow)} (USD-equivalent)` : 'No cycle found';
     case 'trace_funds':
       return step.rows ? `${m.chains} chain(s), longest ${m.trace_hops} hops ${m.direction}` : 'No onward chain';
     case 'k_hop_neighbourhood':
