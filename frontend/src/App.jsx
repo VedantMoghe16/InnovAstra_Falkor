@@ -2,6 +2,9 @@ import { Component, useState } from 'react';
 import { BrowserRouter, Routes, Route, NavLink, Navigate, useNavigate, useLocation } from 'react-router-dom';
 import Dashboard from './pages/Dashboard';
 import Today from './pages/Today';
+import MyWork from './pages/MyWork';
+import SupervisorHome from './pages/SupervisorHome';
+import AdminHome from './pages/AdminHome';
 import Cases from './pages/Cases';
 import Incidents from './pages/Incidents';
 import Journey from './pages/Journey';
@@ -66,49 +69,68 @@ const ICONS = {
   collusion: 'M18 18.72a9.094 9.094 0 003.741-.479 3 3 0 00-4.682-2.72m.94 3.198l.001.031c0 .225-.012.447-.037.666A11.944 11.944 0 0112 21c-2.17 0-4.207-.576-5.963-1.584A6.062 6.062 0 016 18.719m12 0a5.971 5.971 0 00-.941-3.197m0 0A5.995 5.995 0 0012 12.75a5.995 5.995 0 00-5.058 2.772m0 0a3 3 0 00-4.681 2.72 8.986 8.986 0 003.74.477m.94-3.197a5.971 5.971 0 00-.94 3.197M15 6.75a3 3 0 11-6 0 3 3 0 016 0zm6 3a2.25 2.25 0 11-4.5 0 2.25 2.25 0 014.5 0zm-13.5 0a2.25 2.25 0 11-4.5 0 2.25 2.25 0 014.5 0z',
 };
 
-const NAV_GROUPS = [
-  {
-    title: 'Work',
-    fixed: true,
-    items: [
-      { to: '/', label: 'Today', icon: ICONS.dashboard },
-      { to: '/investigator', label: 'Investigator', icon: ICONS.investigator },
-      { to: '/cases', label: 'Cases', icon: ICONS.cases },
-      { to: '/incidents', label: 'Incidents', icon: ICONS.incidents },
-    ],
-  },
-  {
-    title: 'Explore',
-    items: [
-      { to: '/graph', label: 'Network graph', icon: ICONS.graph },
-      { to: '/journey', label: 'Fund journey', icon: ICONS.journey },
-      { to: '/collusion', label: 'Collusion rings', icon: ICONS.collusion },
-      { to: '/entities', label: 'Entities', icon: ICONS.entities },
-      { to: '/patterns', label: 'Patterns', icon: ICONS.patterns },
-      { to: '/replay', label: 'Temporal replay', icon: ICONS.replay },
-    ],
-  },
-  {
-    title: 'Insights',
-    items: [
-      { to: '/overview', label: 'Overview', icon: ICONS.overview },
-      { to: '/analytics', label: 'Channel / branch', icon: ICONS.analytics },
-      { to: '/map', label: 'Geo map', icon: ICONS.map },
-      { to: '/model', label: 'ML models', icon: ICONS.model },
-    ],
-  },
-  {
-    title: 'Tools',
-    items: [
-      { to: '/live', label: 'Live stream', icon: ICONS.live },
-      { to: '/simulate', label: 'Simulation', icon: ICONS.simulate },
-      { to: '/copilot', label: 'Copilot', icon: ICONS.copilot },
-      { to: '/sar', label: 'SAR reports', icon: ICONS.sar },
-      { to: '/aa', label: 'Account aggregator', icon: ICONS.aa },
-      { to: '/settings', label: 'Settings', icon: ICONS.settings },
-    ],
-  },
-];
+const NAV = {
+  home: { to: '/', icon: ICONS.dashboard },
+  investigator: { to: '/investigator', label: 'Investigator', icon: ICONS.investigator },
+  cases: { to: '/cases', label: 'Cases', icon: ICONS.cases },
+  incidents: { to: '/incidents', label: 'Incidents', icon: ICONS.incidents },
+  graph: { to: '/graph', label: 'Network graph', icon: ICONS.graph },
+  journey: { to: '/journey', label: 'Fund journey', icon: ICONS.journey },
+  collusion: { to: '/collusion', label: 'Collusion rings', icon: ICONS.collusion },
+  entities: { to: '/entities', label: 'Entities', icon: ICONS.entities },
+  patterns: { to: '/patterns', label: 'Patterns', icon: ICONS.patterns },
+  replay: { to: '/replay', label: 'Temporal replay', icon: ICONS.replay },
+  overview: { to: '/overview', label: 'Overview', icon: ICONS.overview },
+  analytics: { to: '/analytics', label: 'Channel / branch', icon: ICONS.analytics },
+  map: { to: '/map', label: 'Geo map', icon: ICONS.map },
+  model: { to: '/model', label: 'ML models', icon: ICONS.model },
+  live: { to: '/live', label: 'Live stream', icon: ICONS.live },
+  simulate: { to: '/simulate', label: 'Simulation', icon: ICONS.simulate },
+  copilot: { to: '/copilot', label: 'Copilot', icon: ICONS.copilot },
+  sar: { to: '/sar', label: 'SAR reports', icon: ICONS.sar },
+  aa: { to: '/aa', label: 'Account aggregator', icon: ICONS.aa },
+  settings: { to: '/settings', label: 'Settings', icon: ICONS.settings },
+};
+
+const group = (title, keys, fixed = false) => ({ title, fixed, items: keys.map((k) => NAV[k]) });
+
+// Each role sees the work it actually does: the investigator runs investigations,
+// the supervisor signs off on what the agent proposes, the admin keeps the system healthy.
+const ROLE_NAV = {
+  INVESTIGATOR: [
+    group('Work', ['home', 'investigator', 'incidents', 'cases'], true),
+    group('Explore', ['graph', 'journey', 'collusion', 'entities', 'patterns', 'replay']),
+    group('Tools', ['copilot', 'aa']),
+  ],
+  SUPERVISOR: [
+    group('Work', ['home', 'cases', 'sar', 'investigator'], true),
+    group('Insights', ['overview', 'incidents', 'analytics', 'map']),
+    group('Explore', ['graph', 'journey', 'collusion', 'entities']),
+  ],
+  ADMIN: [
+    group('System', ['home', 'model', 'settings', 'live'], true),
+    group('Tools', ['simulate', 'aa', 'copilot']),
+    group('Insights', ['overview', 'analytics', 'map', 'patterns']),
+    group('Case work', ['investigator', 'incidents', 'cases', 'sar', 'graph', 'journey', 'collusion', 'entities', 'replay']),
+  ],
+};
+
+const HOME_LABEL = { INVESTIGATOR: 'My work', SUPERVISOR: 'Approvals', ADMIN: 'System' };
+
+function navFor(role) {
+  const r = ROLE_NAV[role] ? role : 'INVESTIGATOR';
+  return ROLE_NAV[r].map((g) => ({
+    ...g,
+    items: g.items.map((it) => (it.to === '/' ? { ...it, label: HOME_LABEL[r] } : it)),
+  }));
+}
+
+function RoleHome() {
+  const role = getSession()?.role;
+  if (role === 'SUPERVISOR') return <SupervisorHome />;
+  if (role === 'ADMIN') return <AdminHome />;
+  return <MyWork />;
+}
 
 
 function UserMenu() {
@@ -216,7 +238,7 @@ function SideNav() {
         </div>
       </div>
       <nav className="flex-1 space-y-4 overflow-y-auto px-3 pb-4">
-        {NAV_GROUPS.map((group) => {
+        {navFor(getSession()?.role).map((group) => {
           const hasActive = group.items.some((it) => isActivePath(pathname, it.to));
           const open = group.fixed || (toggled[group.title] ?? hasActive);
           return (
@@ -304,7 +326,8 @@ function Shell() {
           <TopBar />
           <div className="min-h-0 flex-1 overflow-y-auto overflow-x-hidden rounded-3xl">
             <Routes>
-            <Route path="/" element={<Today />} />
+            <Route path="/" element={<RoleHome />} />
+            <Route path="/today" element={<Today />} />
             <Route path="/overview" element={<Dashboard />} />
             <Route path="/incidents" element={<Incidents />} />
             <Route path="/cases" element={<Cases />} />
