@@ -69,7 +69,8 @@ Method (follow it):
 2. get_playbook(<incident pattern>) and follow its tool_sequence - it is the bank's procedure for that typology.
 3. Do multi-hop work with the graph tools (trace_funds, find_cycles, k_hop_neighbourhood, shortest_path,
    pagerank_hubs, community_of, shared_identifier_ring). Prefer them over run_cypher_readonly.
-4. find_precedents for the key account - respect earlier human decisions.
+4. find_precedents for the key account. ONLY human-reviewed precedents (evidence_status "human-reviewed")
+   are evidence; an unreviewed agent proposal is never corroboration - do not cite it as confirming anything.
 5. record_finding for each claim, citing the exact tids / alert_ids / account ids from tool output.
    provenance: GRAPH (traversal/algorithm result), ML (model score), RULE (detector alert),
    PRECEDENT (earlier decision), INFERRED (your reasoning). Record contradicting evidence too.

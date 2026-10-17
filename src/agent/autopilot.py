@@ -134,7 +134,10 @@ def interpret(tool: str, env: Dict, acct: str, frontier: Frontier) -> Optional[T
                 f"{', '.join(x['type'] + ' ' + x['value'] for x in d0['shared_identifiers'][:4])}.",
                 "GRAPH", [], [acct] + [x["account"] for x in d0["members"]])
     if tool == "find_precedents" and rows:
-        p0 = data[0]
+        reviewed = [r for r in data if r.get("review")]
+        if not reviewed:
+            return None   # unreviewed agent proposals are not evidence (narrated by the caller)
+        p0 = reviewed[0]
         review = {"APPROVES": "approved", "REJECTS": "rejected"}.get(p0.get("review") or "", "not yet reviewed")
         note = f' ("{p0["review_note"]}")' if p0.get("review_note") else ""
         return (f"Earlier investigation {p0['investigation']} (verdict {p0.get('verdict')}) touched this "
@@ -273,6 +276,9 @@ async def graph_driven_loop(sess, question: str, graph_tools: bool, step_event: 
             yield {"type": "thinking", "text": f"Budget reached ({len(investigated)} accounts); {len(frontier)} further leads left unexplored."}
         env, ev = await call("find_precedents", {"account_id": key_account})
         yield ev
+        unrev = (env.get("metrics") or {}).get("unreviewed", 0)
+        if unrev and not (env.get("metrics") or {}).get("reviewed"):
+            yield {"type": "thinking", "text": f"{unrev} earlier agent proposal(s) touch this neighbourhood, but no human reviewed them - not used as evidence."}
         out = interpret("find_precedents", env, key_account, frontier)
         if out:
             yield await record(out[0], out[1], out[2], out[3], 0.6)

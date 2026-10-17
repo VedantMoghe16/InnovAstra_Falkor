@@ -491,12 +491,21 @@ ORDER BY started_at DESC LIMIT {limit}"""
         params = {"t": typology or ""}
     rows, ms, to = _run(graph, cypher, params)
     now = time.time()
+    reviewed = 0
     for r in rows:
         if r.get("reviewed_at"):
             r["review_age_days"] = round((now - float(r["reviewed_at"])) / 86400, 1)
+        if r.get("review"):
+            reviewed += 1
+            r["evidence_status"] = f"human-reviewed: {'approved' if r['review'] == 'APPROVES' else 'rejected'}"
+        else:
+            r["evidence_status"] = "unreviewed agent proposal - NOT evidence"
+    note = ("No prior investigations touch this account's neighbourhood." if not rows else
+            "Only human-reviewed precedents are evidence; unreviewed agent proposals are context only." if reviewed < len(rows)
+            else "")
     return envelope("find_precedents", cypher, params, rows, ms, provenance="PRECEDENT",
-                    metrics={"precedents": len(rows)}, timed_out=to,
-                    note="" if rows else "No prior investigations touch this account's neighbourhood.")
+                    metrics={"precedents": len(rows), "reviewed": reviewed, "unreviewed": len(rows) - reviewed},
+                    timed_out=to, note=note)
 
 
 _WRITE_RE = re.compile(r"\b(CREATE|MERGE|SET|DELETE|DETACH|REMOVE|DROP|LOAD\s+CSV)\b", re.I)

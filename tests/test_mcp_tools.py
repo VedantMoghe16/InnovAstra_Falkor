@@ -232,3 +232,14 @@ def test_fx_makes_amounts_comparable(g):
     inc = Q.get_incident(g, "INC-T1")["data"][0]
     assert inc["total_flow_usd"] > 0 and "total_flow" not in inc
     g.query("MATCH ()-[t:TXN {tid: 77}]->() DELETE t")
+
+
+def test_precedents_mark_unreviewed_agent_proposals(g):
+    iid = Q.create_investigation(g, "prec-hygiene", account_ids=["D"])
+    A.record_finding(g, iid, "D pays E", "GRAPH", ["D"], [5], [], 0.5)
+    A.propose_action(g, iid, "open_case", "look")
+    Q.finish_investigation(g, iid, {"verdict": "REVIEW", "confidence": 0.4, "summary": "s"})
+    env = Q.find_precedents(g, "D")
+    mine = [r for r in env["data"] if r["investigation"] == iid]
+    assert mine and mine[0]["evidence_status"].startswith("unreviewed")
+    assert env["metrics"]["unreviewed"] >= 1 and "NOT evidence" in mine[0]["evidence_status"]
