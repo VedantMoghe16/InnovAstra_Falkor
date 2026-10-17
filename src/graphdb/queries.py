@@ -983,3 +983,42 @@ def status(graph) -> Dict:
         rels[rt], ms = r[0]["c"], ms + m
     return {"labels": labels, "relationships": rels, "query_ms": round(ms, 2),
             "roundtrip_ms": round((time.time() - t0) * 1000, 1)}
+
+
+def inbox(graph, limit: int = 10) -> Dict:
+    """The investigator's home screen: agent proposals waiting on a human,
+    the latest investigations, and a few headline counts (per-label counts,
+    no full scans)."""
+    limit = _clamp(limit, 1, 50, 10)
+    pending, _, _ = _run(graph, f"""
+MATCH (d:Decision)
+WHERE d.status = 'proposed' AND d.actor = 'agent'
+MATCH (d)-[:IN]->(inv:Investigation)
+OPTIONAL MATCH (d)-[:CAUSED_BY]->(:Finding)-[:SUPPORTED_BY]->(a:Account)
+WITH d, inv, collect(DISTINCT a.id) AS cited
+OPTIONAL MATCH (d)-[:TARGETS]->(ta:Account)
+RETURN d.id AS decision_id, d.action_requested AS action_requested, d.action_final AS action_final,
+       d.policy_rule AS policy_rule, d.policy_rationale AS policy_rationale, d.ts AS ts,
+       inv.id AS investigation_id, inv.question AS question, inv.verdict AS verdict,
+       cited, collect(DISTINCT ta.id) AS targets
+ORDER BY ts DESC LIMIT {limit}""")
+    for p in pending:
+        accts = list(dict.fromkeys([a for a in (p.pop("targets") or []) + (p.pop("cited") or []) if a]))
+        p["accounts"] = accts[:5]
+        p["accounts_total"] = len(accts)
+
+    def _count(cypher: str, params: Optional[Dict] = None) -> int:
+        rows, _, _ = _run(graph, cypher, params)
+        return int(rows[0]["c"]) if rows and rows[0].get("c") is not None else 0
+
+    counts = {
+        "open_incidents": _count("MATCH (i:Incident) RETURN count(i) AS c"),
+        "pending_decisions": _count("MATCH (d:Decision) WHERE d.status = 'proposed' AND d.actor = 'agent' "
+                                    "RETURN count(d) AS c"),
+        "investigations_7d": _count("MATCH (inv:Investigation) WHERE inv.started_at >= $since "
+                                    "RETURN count(inv) AS c", {"since": time.time() - 7 * 86400}),
+        "accounts": _count("MATCH (n:Account) RETURN count(n) AS c"),
+        "transactions": _count("MATCH ()-[t:TXN]->() RETURN count(t) AS c"),
+    }
+    return {"pending_decisions": pending, "recent_investigations": list_investigations(graph, 5),
+            "counts": counts}

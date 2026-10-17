@@ -109,6 +109,15 @@ def register(app: FastAPI, state: Dict, invalidate_caches: Callable[[], None]) -
     def agent_investigations(limit: int = Query(30, le=200)):
         return _q().list_investigations(falkor(), limit)
 
+    @app.get("/api/agent/inbox")
+    def agent_inbox(limit: int = Query(10, le=50)):
+        """Home screen: proposals awaiting a human, recent investigations, top incidents, counts."""
+        Q = _q()
+        g = falkor()
+        out = Q.inbox(g, limit)
+        out["top_incidents"] = Q.list_incidents(g, limit=5)["data"]
+        return out
+
     @app.get("/api/agent/investigations/{investigation_id}")
     def agent_investigation(investigation_id: str):
         Q = _q()

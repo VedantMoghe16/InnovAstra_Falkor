@@ -1,6 +1,7 @@
 import { Component, useState } from 'react';
 import { BrowserRouter, Routes, Route, NavLink, useNavigate, useLocation } from 'react-router-dom';
 import Dashboard from './pages/Dashboard';
+import Today from './pages/Today';
 import Cases from './pages/Cases';
 import Incidents from './pages/Incidents';
 import Journey from './pages/Journey';
@@ -40,6 +41,7 @@ class ErrorBoundary extends Component {
 }
 
 const ICONS = {
+  overview: 'M4 5a1 1 0 011-1h4a1 1 0 011 1v5a1 1 0 01-1 1H5a1 1 0 01-1-1V5zm10 0a1 1 0 011-1h4a1 1 0 011 1v2a1 1 0 01-1 1h-4a1 1 0 01-1-1V5zM4 15a1 1 0 011-1h4a1 1 0 011 1v4a1 1 0 01-1 1H5a1 1 0 01-1-1v-4zm10-3a1 1 0 011-1h4a1 1 0 011 1v7a1 1 0 01-1 1h-4a1 1 0 01-1-1v-7z',
   investigator: 'M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0zM10 7v3m0 0v3m0-3h3m-3 0H7',
   dashboard: 'M3 12l2-2m0 0l7-7 7 7M5 10v10a1 1 0 001 1h3m10-11l2 2m-2-2v10a1 1 0 01-1 1h-3m-4 0a1 1 0 01-1-1v-4a1 1 0 011-1h2a1 1 0 011 1v4a1 1 0 01-1 1',
   incidents: 'M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z',
@@ -63,42 +65,44 @@ const ICONS = {
 
 const NAV_GROUPS = [
   {
-    title: 'Investigate',
+    title: 'Work',
+    fixed: true,
     items: [
-      { to: '/', label: 'Dashboard', icon: ICONS.dashboard },
+      { to: '/', label: 'Today', icon: ICONS.dashboard },
+      { to: '/investigator', label: 'Investigator', icon: ICONS.investigator },
+      { to: '/cases', label: 'Cases', icon: ICONS.cases },
       { to: '/incidents', label: 'Incidents', icon: ICONS.incidents },
-      { to: '/cases', label: 'Case Workbench', icon: ICONS.cases },
-      { to: '/journey', label: 'Fund Journey', icon: ICONS.journey },
-      { to: '/replay', label: 'Temporal Replay', icon: ICONS.replay },
-      { to: '/graph', label: 'Network Graph', icon: ICONS.graph },
     ],
   },
   {
-    title: 'Analyse',
+    title: 'Explore',
     items: [
-      { to: '/analytics', label: 'Channel / Branch', icon: ICONS.analytics },
-      { to: '/map', label: 'Geo Map', icon: ICONS.map },
-      { to: '/patterns', label: 'Pattern Library', icon: ICONS.patterns },
-      { to: '/entities', label: 'Entity Explorer', icon: ICONS.entities },
-      { to: '/collusion', label: 'Collusion Rings', icon: ICONS.collusion },
-      { to: '/model', label: 'ML Models', icon: ICONS.model },
+      { to: '/graph', label: 'Network graph', icon: ICONS.graph },
+      { to: '/journey', label: 'Fund journey', icon: ICONS.journey },
+      { to: '/collusion', label: 'Collusion rings', icon: ICONS.collusion },
+      { to: '/entities', label: 'Entities', icon: ICONS.entities },
+      { to: '/patterns', label: 'Patterns', icon: ICONS.patterns },
+      { to: '/replay', label: 'Temporal replay', icon: ICONS.replay },
     ],
   },
   {
-    title: 'Act',
+    title: 'Insights',
     items: [
-      { to: '/investigator', label: 'Investigator Agent', icon: ICONS.investigator },
-      { to: '/live', label: 'Live Stream', icon: ICONS.live },
-      { to: '/simulate', label: 'Simulation Studio', icon: ICONS.simulate },
-      { to: '/copilot', label: 'AI Copilot', icon: ICONS.copilot },
-      { to: '/sar', label: 'SAR Reports', icon: ICONS.sar },
+      { to: '/overview', label: 'Overview', icon: ICONS.overview },
+      { to: '/analytics', label: 'Channel / branch', icon: ICONS.analytics },
+      { to: '/map', label: 'Geo map', icon: ICONS.map },
+      { to: '/model', label: 'ML models', icon: ICONS.model },
     ],
   },
   {
-    title: 'Integrate',
+    title: 'Tools',
     items: [
-      { to: '/aa', label: 'Account Aggregator', icon: ICONS.aa },
-      { to: '/settings', label: 'Detector Settings', icon: ICONS.settings },
+      { to: '/live', label: 'Live stream', icon: ICONS.live },
+      { to: '/simulate', label: 'Simulation', icon: ICONS.simulate },
+      { to: '/copilot', label: 'Copilot', icon: ICONS.copilot },
+      { to: '/sar', label: 'SAR reports', icon: ICONS.sar },
+      { to: '/aa', label: 'Account aggregator', icon: ICONS.aa },
+      { to: '/settings', label: 'Settings', icon: ICONS.settings },
     ],
   },
 ];
@@ -142,7 +146,38 @@ function NotFound() {
   );
 }
 
+function NavItem({ item }) {
+  return (
+    <NavLink
+      to={item.to}
+      end={item.to === '/'}
+      className={({ isActive }) =>
+        `relative flex items-center gap-3 rounded-xl px-3 py-2 text-sm transition-colors ${
+          isActive ? 'bg-gray-100 font-medium text-gray-900' : 'text-gray-500 hover:bg-gray-50 hover:text-gray-900'
+        }`
+      }
+    >
+      {({ isActive }) => (
+        <>
+          {isActive && <span className="absolute -left-3 top-2 bottom-2 w-1 rounded-r bg-gray-900" />}
+          <svg className="h-[18px] w-[18px] shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.6}>
+            <path strokeLinecap="round" strokeLinejoin="round" d={item.icon} />
+          </svg>
+          {item.label}
+        </>
+      )}
+    </NavLink>
+  );
+}
+
+function isActivePath(pathname, to) {
+  return to === '/' ? pathname === '/' : pathname === to || pathname.startsWith(`${to}/`);
+}
+
 function SideNav() {
+  const { pathname } = useLocation();
+  // Explicit user toggles; untouched groups open only when they hold the active route.
+  const [toggled, setToggled] = useState({});
   return (
     <aside className="flex w-64 shrink-0 flex-col rounded-3xl bg-white">
       <div className="px-6 pb-4 pt-6">
@@ -154,44 +189,35 @@ function SideNav() {
         </div>
         <p className="mt-1 text-xs text-gray-400">Fund-flow intelligence</p>
       </div>
-      <nav className="flex-1 space-y-5 overflow-y-auto px-3 pb-4">
-        {NAV_GROUPS.map((group) => (
-          <div key={group.title}>
-            <p className="px-3 pb-1.5 text-[11px] font-medium uppercase tracking-wider text-gray-400">{group.title}</p>
-            {group.items.map((item) => (
-              <NavLink
-                key={item.to}
-                to={item.to}
-                end={item.to === '/'}
-                className={({ isActive }) =>
-                  `relative flex items-center gap-3 rounded-xl px-3 py-2 text-sm transition-colors ${
-                    isActive ? 'bg-gray-100 font-medium text-gray-900' : 'text-gray-500 hover:bg-gray-50 hover:text-gray-900'
-                  }`
-                }
-              >
-                {({ isActive }) => (
-                  <>
-                    {isActive && <span className="absolute -left-3 top-2 bottom-2 w-1 rounded-r bg-gray-900" />}
-                    <svg className="h-[18px] w-[18px] shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.6}>
-                      <path strokeLinecap="round" strokeLinejoin="round" d={item.icon} />
-                    </svg>
-                    {item.label}
-                  </>
-                )}
-              </NavLink>
-            ))}
-          </div>
-        ))}
+      <nav className="flex-1 space-y-4 overflow-y-auto px-3 pb-4">
+        {NAV_GROUPS.map((group) => {
+          const hasActive = group.items.some((it) => isActivePath(pathname, it.to));
+          const open = group.fixed || (toggled[group.title] ?? hasActive);
+          return (
+            <div key={group.title}>
+              {group.fixed ? (
+                <p className="px-3 pb-1.5 text-[11px] font-medium uppercase tracking-wider text-gray-400">{group.title}</p>
+              ) : (
+                <button
+                  type="button"
+                  aria-expanded={open}
+                  onClick={() => setToggled((t) => ({ ...t, [group.title]: !open }))}
+                  className="flex w-full items-center justify-between rounded-lg px-3 pb-1.5 text-[11px] font-medium uppercase tracking-wider text-gray-400 hover:text-gray-700"
+                >
+                  <span>{group.title}</span>
+                  <svg className={`h-3.5 w-3.5 transition-transform ${open ? 'rotate-90' : ''}`} fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                    <path strokeLinecap="round" strokeLinejoin="round" d="M9 5l7 7-7 7" />
+                  </svg>
+                </button>
+              )}
+              {open && group.items.map((item) => <NavItem key={item.to} item={item} />)}
+            </div>
+          );
+        })}
       </nav>
-      <div className="m-3 hidden rounded-2xl bg-gray-50 p-4 [@media(min-height:1100px)]:block">
-        <p className="text-sm font-semibold text-gray-900">Context graph</p>
-        <p className="mt-1 text-xs leading-relaxed text-gray-500">
-          Agent memory and evidence live in FalkorDB. Open the Investigator to watch it reason.
-        </p>
-        <NavLink to="/investigator" className="mt-3 block rounded-xl bg-gray-900 py-2 text-center text-xs font-medium text-white hover:bg-gray-800">
-          Open Investigator
-        </NavLink>
-      </div>
+      <p className="px-6 pb-5 text-[11px] leading-relaxed text-gray-400">
+        Evidence and agent memory live in the FalkorDB context graph.
+      </p>
     </aside>
   );
 }
@@ -241,7 +267,8 @@ export default function App() {
             <TopBar />
             <div className="min-h-0 flex-1 overflow-y-auto overflow-x-hidden rounded-3xl">
               <Routes>
-              <Route path="/" element={<Dashboard />} />
+              <Route path="/" element={<Today />} />
+              <Route path="/overview" element={<Dashboard />} />
               <Route path="/incidents" element={<Incidents />} />
               <Route path="/cases" element={<Cases />} />
               <Route path="/journey" element={<Journey />} />

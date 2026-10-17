@@ -124,3 +124,6 @@ export async function streamInvestigation(body, onEvent, signal) {
     }
   }
 }
+
+// Today home: pending agent proposals, recent investigations, top incidents, counts.
+export const getInbox = () => fetchAPI('/api/agent/inbox');
