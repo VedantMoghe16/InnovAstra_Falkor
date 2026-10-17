@@ -81,7 +81,7 @@ def test_llm_loop_contract(g):
         [_tool("record_finding", 3, claim="A->B->C->A round trip", provenance="GRAPH",
                account_ids=["A", "B", "C"], tids=[1, 2, 3], confidence=0.9)],
         [_tool("propose_action", 4, action="escalate", rationale="closed loop, tier-1")],
-        [_tool("submit_verdict", 5, verdict="ESCALATE", confidence=0.88, summary="Round-tripping via B and C.")],
+        [_tool("submit_verdict", 5, verdict="ESCALATE", confidence=0.88, summary="Account A sends funds to B, B forwards to C and C returns them to A within hours (tids 1, 2, 3): a round trip.")],
     ])
     events = _collect(run_investigation("Investigate incident INC-T1", graph=g, runner=DirectToolRunner(),
                                         mode="llm", client=fake))
@@ -107,21 +107,45 @@ def test_llm_loop_contract(g):
     assert v["verdict"] == "ESCALATE" and v["typology"] == "Circular Transaction"
     assert len(v["findings"]) == 1 and v["findings"][0]["provenance"] == "GRAPH"
     assert v["decisions"][0]["action"] == "escalate" and v["decisions"][0]["status"] == "proposed"
-    assert "".join(e["text"] for e in events if e["type"] == "token") == "Round-tripping via B and C."
+    assert "".join(e["text"] for e in events if e["type"] == "token") == "Account A sends funds to B, B forwards to C and C returns them to A within hours (tids 1, 2, 3): a round trip."
 
     tr = Q.investigation_trace(g, v["investigation_id"])
     assert len(tr["steps"]) == 4 and tr["status"] == "complete" and "A" in tr["about"]
 
 
 def test_forced_verdict_on_last_round(g):
+    """Last round forces submit_verdict; a junk verdict with no findings is sent back once."""
     from agent.investigator import run_investigation
     from agent.runners import DirectToolRunner
     fake = FakeClient([[_tool("account_profile", 1, account_id="A")],
-                       [_tool("submit_verdict", 2, verdict="REVIEW", confidence=0.4, summary="Need more.")]])
+                       [_tool("submit_verdict", 2, verdict="REVIEW", confidence=0.4, summary="Need more.")],
+                       [_tool("submit_verdict", 3, verdict="REVIEW", confidence=0.4,
+                              summary="Profile of A shows flagged activity but no traversal was run, so this needs analyst review.")]])
     events = _collect(run_investigation("Is A a mule?", graph=g, runner=DirectToolRunner(),
                                         mode="llm", client=fake, max_rounds=2))
     assert fake.calls[1]["tool_choice"] == {"type": "tool", "name": "submit_verdict"}
-    assert [e for e in events if e["type"] == "verdict"][0]["verdict"] == "REVIEW"
+    assert any(e["type"] == "thinking" and e["text"].startswith("Verdict sent back") for e in events)
+    v = [e for e in events if e["type"] == "verdict"][0]
+    assert v["verdict"] == "REVIEW" and v["grounding"]["graph_findings"] == 0 and v["confidence"] <= 0.5
+
+
+def test_removal_mode_llm_cannot_escalate_without_graph_evidence(g):
+    """The removal test holds for an LLM brain: a confident ESCALATE claim with
+    graph tools off is grounded down to REVIEW <= 0.5."""
+    from agent.investigator import run_investigation
+    from agent.runners import DirectToolRunner
+    fake = FakeClient([
+        [_tool("get_incident", 1, incident_id="INC-T1")],
+        [_tool("record_finding", 2, claim="Incident has a tier-1 alert", provenance="RULE", alert_ids=["AL1"])],
+        [_tool("propose_action", 3, action="escalate", rationale="tier-1")],
+        [_tool("submit_verdict", 4, verdict="ESCALATE", confidence=0.95,
+               summary="Incident INC-T1 has a tier-1 round-trip alert AL1 flagging A, B and C; escalate it now.")],
+    ])
+    events = _collect(run_investigation("Investigate incident INC-T1", graph=g, runner=DirectToolRunner(),
+                                        mode="llm", client=fake, graph_tools=False))
+    v = [e for e in events if e["type"] == "verdict"][0]
+    assert v["grounding"]["claimed_verdict"] == "ESCALATE"
+    assert v["verdict"] == "REVIEW" and v["confidence"] <= 0.5 and v["grounding"]["adjusted"]
 
 
 def test_removal_mode_hides_graph_tools(g):
@@ -224,7 +248,7 @@ def test_gemini_loop_contract(g):
         [_fc("find_cycles", account_id="A")],
         [_fc("record_finding", claim="A->B->C->A", provenance="GRAPH", account_ids=["A", "B", "C"], tids=[1, 2, 3])],
         [_fc("propose_action", action="monitor", rationale="watch the ring", account_ids=["B", "C"])],
-        [_fc("submit_verdict", verdict="ESCALATE", confidence=0.85, summary="Round trip through B and C.")],
+        [_fc("submit_verdict", verdict="ESCALATE", confidence=0.85, summary="Account A sends funds to B, B forwards to C and C returns them to A within hours (tids 1, 2, 3): a round trip.")],
     ])
 
     async def go():

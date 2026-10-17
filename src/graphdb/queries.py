@@ -545,27 +545,28 @@ def write_finding(graph, investigation_id: str, claim: str, provenance: str,
         prov = "INFERRED"
     fid = f"F-{uuid.uuid4().hex[:8].upper()}"
     tids = [int(t) for t in (tids or []) if str(t).lstrip("-").isdigit()]
+    # Verify cited tids exist BEFORE writing - only verified ids become evidence;
+    # the rest are kept as unverified_tids so grounding can penalise them.
+    valid: List[int] = []
+    if tids:
+        vrows, _, _ = _run(graph, "MATCH ()-[t:TXN]->() WHERE t.tid IN $tids RETURN t.tid AS tid", {"tids": tids})
+        valid = sorted({r["tid"] for r in vrows})
+    unverified = sorted(set(tids) - set(valid))
     cypher = """
 MATCH (inv:Investigation {id: $iid})
 CREATE (inv)-[:FOUND]->(f:Finding {id: $fid, claim: $claim, provenance: $prov,
-        evidence_tids: $tids, alert_ids: $alerts, confidence: $conf, ts: $ts})
+        evidence_tids: $tids, unverified_tids: $unverified, alert_ids: $alerts, confidence: $conf, ts: $ts})
 WITH f
 UNWIND $accts AS aid
 MATCH (a:Account {id: aid})
 MERGE (f)-[:SUPPORTED_BY]->(a)
 RETURN count(a) AS linked"""
-    params = {"iid": investigation_id, "fid": fid, "claim": claim[:1000], "prov": prov, "tids": tids,
-              "alerts": list(alert_ids or []), "conf": float(confidence or 0), "ts": _now(),
-              "accts": list(account_ids or [])}
+    params = {"iid": investigation_id, "fid": fid, "claim": claim[:1000], "prov": prov, "tids": valid,
+              "unverified": unverified, "alerts": list(alert_ids or []), "conf": float(confidence or 0),
+              "ts": _now(), "accts": list(account_ids or [])}
     rows, ms, _ = _run(graph, cypher, params, write=True)
-    # Verify cited tids actually exist - provenance has to be checkable.
-    valid = []
-    if tids:
-        vrows, _, _ = _run(graph, "MATCH ()-[t:TXN]->() WHERE t.tid IN $tids RETURN t.tid AS tid", {"tids": tids})
-        valid = [r["tid"] for r in vrows]
     data = {"finding_id": fid, "provenance": prov, "accounts_linked": rows[0]["linked"] if rows else 0,
-            "tids_cited": len(tids), "tids_verified": len(valid),
-            "unverified_tids": sorted(set(tids) - set(valid))}
+            "tids_cited": len(tids), "tids_verified": len(valid), "unverified_tids": unverified}
     return envelope("record_finding", cypher, {k: v for k, v in params.items() if k != "claim"},
                     rows, ms, data=data, provenance="INFERRED")
 
@@ -783,6 +784,7 @@ RETURN s.n AS n, t.tool AS tool, t.cypher AS cypher, t.params_json AS args, t.ro
 MATCH (:Investigation {id: $id})-[:FOUND]->(f:Finding)
 OPTIONAL MATCH (f)-[:SUPPORTED_BY]->(a:Account)
 RETURN f.id AS id, f.claim AS claim, f.provenance AS provenance, f.evidence_tids AS tids,
+       f.unverified_tids AS unverified_tids,
        f.alert_ids AS alert_ids, f.confidence AS confidence, collect(a.id) AS accounts, f.ts AS ts
 ORDER BY ts""", {"id": investigation_id})
     decisions, _, _ = _run(graph, """

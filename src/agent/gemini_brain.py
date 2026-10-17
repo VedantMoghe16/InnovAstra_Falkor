@@ -95,8 +95,10 @@ async def gemini_loop(sess, question: str, graph_tools: bool, model: Optional[st
     usage = {"input": 0, "output": 0, "cache_read": 0}
     verdict = None
 
-    for rnd in range(max_rounds):
-        force = rnd == max_rounds - 1
+    rnd = 0
+    while rnd < max_rounds + sess.verdict_rejections * 2:
+        force = rnd >= max_rounds - 1 + sess.verdict_rejections * 2
+        rnd += 1
         cfg = types.GenerateContentConfig(
             system_instruction=system_text,
             tools=tools,
@@ -131,8 +133,15 @@ async def gemini_loop(sess, question: str, graph_tools: bool, model: Optional[st
                 continue
             name, args = fc.name, dict(fc.args or {})
             if name == submit_verdict["name"]:
-                verdict = args
-                replies.append(types.Part.from_function_response(name=name, response={"result": "recorded"}))
+                from agent.grounding import check_verdict_quality
+                ok, why = check_verdict_quality(args, sess.findings_recorded)
+                if ok or sess.verdict_rejections >= 1:
+                    verdict = args
+                    replies.append(types.Part.from_function_response(name=name, response={"result": "recorded"}))
+                else:
+                    sess.verdict_rejections += 1
+                    yield {"type": "thinking", "text": f"Verdict sent back to the model: {why}"}
+                    replies.append(types.Part.from_function_response(name=name, response={"error": why}))
                 continue
             env = await sess.call(name, args)
             yield step_event(sess.n, name, args, env)

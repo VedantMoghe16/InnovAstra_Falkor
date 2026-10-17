@@ -23,6 +23,7 @@ import time
 from typing import Any, AsyncIterator, Dict, List, Optional
 
 from graphdb import queries as Q
+from agent.grounding import check_verdict_quality
 
 try:  # keys may live in .env files (gitignored); never override real env vars
     from dotenv import load_dotenv
@@ -181,6 +182,8 @@ class _Session:
         self.graph, self.runner, self.iid, self.allowed = graph, runner, iid, allowed
         self.n = 0
         self.typology = ""
+        self.findings_recorded = 0
+        self.verdict_rejections = 0
 
     async def call(self, name: str, args: Dict) -> Dict:
         if self.allowed is not None and name not in self.allowed:
@@ -193,6 +196,9 @@ class _Session:
             env = await self.runner.call(name, call_args)
         env.setdefault("tool", name)
         self.n += 1
+        if name == "record_finding" and not env.get("is_error") and isinstance(env.get("data"), dict) \
+                and env["data"].get("finding_id"):
+            self.findings_recorded += 1
         try:
             Q.write_tool_call(self.graph, self.iid, self.n, env, args)
         except Exception:
@@ -225,8 +231,10 @@ async def _llm_loop(sess: _Session, question: str, graph_tools: bool, model: str
     messages: List[Dict] = [{"role": "user", "content": question}]
     verdict = None
     usage = {"input": 0, "output": 0, "cache_read": 0}
-    for rnd in range(max_rounds):
-        force = rnd == max_rounds - 1
+    rnd = 0
+    while rnd < max_rounds + sess.verdict_rejections * 2:
+        force = rnd >= max_rounds - 1 + sess.verdict_rejections * 2
+        rnd += 1
         resp = await client.messages.create(
             model=model, max_tokens=2048, system=system, tools=tools, messages=messages,
             tool_choice={"type": "tool", "name": "submit_verdict"} if force else {"type": "auto"})
@@ -241,8 +249,15 @@ async def _llm_loop(sess: _Session, question: str, graph_tools: bool, model: str
                 yield {"type": "thinking", "text": block.text.strip()}
             elif block.type == "tool_use":
                 if block.name == "submit_verdict":
-                    verdict = dict(block.input or {})
-                    results.append({"type": "tool_result", "tool_use_id": block.id, "content": "recorded"})
+                    cand = dict(block.input or {})
+                    ok, why = check_verdict_quality(cand, sess.findings_recorded)
+                    if ok or sess.verdict_rejections >= 1:
+                        verdict = cand
+                        results.append({"type": "tool_result", "tool_use_id": block.id, "content": "recorded"})
+                    else:
+                        sess.verdict_rejections += 1
+                        yield {"type": "thinking", "text": f"Verdict sent back to the model: {why}"}
+                        results.append({"type": "tool_result", "tool_use_id": block.id, "content": why, "is_error": True})
                     continue
                 args = dict(block.input or {})
                 env = await sess.call(block.name, args)
@@ -331,6 +346,8 @@ async def run_investigation(question: str, *, graph=None, graph_tools: bool = Tr
     except Exception as e:  # noqa: BLE001
         final = {"verdict": "UNCERTAIN", "confidence": 0.0, "summary": f"Investigation aborted: {e}"}
         yield {"type": "error", "message": str(e)}
+    from agent.grounding import ground_verdict
+    final = ground_verdict(final, Q.investigation_trace(graph, iid) or {})
     Q.finish_investigation(graph, iid, final)
     trace = Q.investigation_trace(graph, iid) or {}
     yield {"type": "verdict", "investigation_id": iid, **final,

@@ -57,6 +57,28 @@ function Decision({ d, canReview, onReview }) {
   );
 }
 
+const LABEL = { ESCALATE: 'Escalate', REVIEW: 'Review', CLEAR_RECOMMENDED: 'Clear', UNCERTAIN: 'Uncertain' };
+
+function Grounding({ g, final }) {
+  const changed = g.adjusted || g.confidence_capped;
+  return (
+    <div className={`rounded-2xl p-4 text-xs ${changed ? 'bg-[#fdf0e2]' : 'bg-gray-50'}`}>
+      <p className="font-medium text-gray-900">Grounded in the graph trace</p>
+      <p className="mt-1 text-gray-600">
+        {g.graph_findings} graph finding(s), {g.verified_tids} verified transaction(s)
+        {g.unverified_tids ? `, ${g.unverified_tids} cited id(s) not found in the graph` : ''}
+        {' | '}policy {g.policy_endorsed_escalation ? 'endorsed an escalation' : 'did not endorse an escalation'}
+      </p>
+      {changed && (
+        <p className="mt-1 text-gray-700">
+          The agent claimed {LABEL[g.claimed_verdict] || g.claimed_verdict} at {Math.round(g.claimed_confidence * 100)}%;
+          the evidence supports {LABEL[final.verdict] || final.verdict} at {Math.round(final.confidence * 100)}% - {g.reason}.
+        </p>
+      )}
+    </div>
+  );
+}
+
 export default function VerdictCard({ verdict, summary, canReview, onReview, reviewMsg, running }) {
   if (!verdict) {
     return (
@@ -92,6 +114,7 @@ export default function VerdictCard({ verdict, summary, canReview, onReview, rev
           <div className="h-3 rounded-full bg-lime" style={{ width: `${conf}%` }} />
         </div>
       </div>
+      {verdict.grounding && <Grounding g={verdict.grounding} final={verdict} />}
       {summary && <p className="text-sm leading-relaxed text-gray-600">{summary}</p>}
       {verdict.contradicting_evidence?.length > 0 && (
         <p className="text-xs text-gray-500"><span className="font-medium text-gray-700">Against: </span>{verdict.contradicting_evidence.join('; ')}</p>
