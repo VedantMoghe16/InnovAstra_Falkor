@@ -19,8 +19,17 @@ export function setRole(role) {
   localStorage.setItem('rudra_role', role);
 }
 
+function sessionUser() {
+  try { return JSON.parse(localStorage.getItem('rudra_session') || 'null') || {}; } catch { return {}; }
+}
+
+// Role drives RBAC; name + email attribute who ran or reviewed something.
 function withRoleHeaders(extra = {}) {
-  return { 'X-User-Role': getRole(), ...extra };
+  const u = sessionUser();
+  const h = { 'X-User-Role': getRole(), ...extra };
+  if (u.email) h['X-User-Email'] = u.email;
+  if (u.name) h['X-User-Name'] = u.name;
+  return h;
 }
 
 // Retry transient network failures (connection reset on first load); HTTP
@@ -137,3 +146,8 @@ export function getIncidentList(params = {}) {
   const s = qs.toString();
   return fetchAPI(`/api/agent/incidents${s ? `?${s}` : ''}`);
 }
+
+// Role homes
+export const getMyWork = () => fetchAPI('/api/agent/my');
+export const getOversight = () => fetchAPI('/api/agent/oversight');
+export const getSystem = () => fetchAPI('/api/agent/system');

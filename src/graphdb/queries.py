@@ -584,16 +584,20 @@ def _now() -> float:
 
 
 def create_investigation(graph, question: str, mode: str = "graph", account_ids: Sequence[str] = (),
-                         typology: str = "", investigation_id: Optional[str] = None) -> str:
+                         typology: str = "", investigation_id: Optional[str] = None,
+                         run_by: Optional[Dict] = None) -> str:
     iid = investigation_id or f"INV-{time.strftime('%Y%m%d-%H%M%S')}-{uuid.uuid4().hex[:4].upper()}"
     graph.query("""
 MERGE (inv:Investigation {id: $id})
-SET inv.question = $q, inv.mode = $mode, inv.started_at = $ts, inv.status = 'running', inv.typology = $typ
+SET inv.question = $q, inv.mode = $mode, inv.started_at = $ts, inv.status = 'running', inv.typology = $typ,
+    inv.run_by_email = $by_email, inv.run_by_name = $by_name, inv.run_by_role = $by_role
 WITH inv
 UNWIND $accts AS aid
 MATCH (a:Account {id: aid})
 MERGE (inv)-[:ABOUT]->(a)""", {"id": iid, "q": question, "mode": mode, "ts": _now(),
-                               "accts": list(account_ids), "typ": typology})
+                               "accts": list(account_ids), "typ": typology,
+                               "by_email": (run_by or {}).get("email", ""), "by_name": (run_by or {}).get("name", ""),
+                               "by_role": (run_by or {}).get("role", "")})
     return iid
 
 
@@ -778,14 +782,16 @@ MATCH (d)-[:IN]->(prev:Investigation) WHERE prev <> inv
 MERGE (d)-[:PRECEDENT_FOR]->(inv)""", {"id": investigation_id})
 
 
-def review_decision(graph, decision_id: str, approve: bool, reviewer_role: str, note: str = "") -> Dict:
+def review_decision(graph, decision_id: str, approve: bool, reviewer_role: str, note: str = "",
+                    reviewer_name: str = "") -> Dict:
     rel = "APPROVES" if approve else "REJECTS"
     hid = f"H-{uuid.uuid4().hex[:8].upper()}"
     rows, _, _ = _run(graph, f"""
 MATCH (d:Decision {{id: $did}})
 WHERE d.status = 'proposed'
-SET d.status = $status, d.reviewed_by = $role, d.reviewed_at = $ts
-CREATE (h:Decision {{id: $hid, actor: 'human', role: $role, note: $note, ts: $ts,
+SET d.status = $status, d.reviewed_by = $role, d.reviewed_by_name = $rname, d.reviewed_at = $ts,
+    d.review_note = $note
+CREATE (h:Decision {{id: $hid, actor: 'human', role: $role, name: $rname, note: $note, ts: $ts,
         action_final: d.action_final, status: $status}})-[:{rel}]->(d)
 WITH d
 MATCH (d)-[:IN]->(inv:Investigation)
@@ -797,7 +803,7 @@ OPTIONAL MATCH (al:Alert)-[:FLAGS]->(a)
 RETURN d.id AS decision_id, d.action_final AS action, d.status AS status, inv.id AS investigation,
        d.draft AS draft, collect(DISTINCT a.id) AS accounts, collect(DISTINCT al.alert_id) AS alert_ids""",
                       {"did": decision_id, "status": "approved" if approve else "rejected", "role": reviewer_role,
-                       "note": note[:500], "ts": _now(), "hid": hid,
+                       "note": note[:500], "ts": _now(), "hid": hid, "rname": reviewer_name[:80],
                        "verdict": "confirmed_suspicious" if approve else "cleared_by_supervisor"}, write=True)
     return rows[0] if rows else {}
 
@@ -972,6 +978,7 @@ WITH inv, count(t) AS steps
 OPTIONAL MATCH (d:Decision)-[:IN]->(inv)
 RETURN inv.id AS id, inv.question AS question, inv.mode AS mode, inv.status AS status,
        inv.verdict AS verdict, inv.confidence AS confidence, inv.started_at AS started_at, steps,
+       inv.run_by_name AS run_by_name, inv.run_by_email AS run_by_email,
        sum(CASE WHEN d.status = 'proposed' THEN 1 ELSE 0 END) AS pending_decisions
 ORDER BY started_at DESC LIMIT {_clamp(limit, 1, 200, 30)}""")
     return rows
@@ -1006,6 +1013,7 @@ OPTIONAL MATCH (d)-[:TARGETS]->(ta:Account)
 RETURN d.id AS decision_id, d.action_requested AS action_requested, d.action_final AS action_final,
        d.policy_rule AS policy_rule, d.policy_rationale AS policy_rationale, d.ts AS ts,
        inv.id AS investigation_id, inv.question AS question, inv.verdict AS verdict,
+       inv.run_by_name AS run_by_name, inv.run_by_email AS run_by_email,
        cited, collect(DISTINCT ta.id) AS targets
 ORDER BY ts DESC LIMIT {limit}""")
     for p in pending:
@@ -1123,3 +1131,90 @@ ORDER BY {INCIDENT_SORTS[sort]}"""
             "sort": sort, "limit": limit, "offset": offset,
             "ms": round(ms0 + ms1 + ms2, 2), "roundtrip_ms": round((time.time() - t0) * 1000, 1),
             "timed_out": bool(to1 or to2)}
+
+
+# -- role homes ------------------------------------------------------------------
+
+def my_work(graph, email: str, limit: int = 10) -> Dict:
+    """Investigator home: my investigations and what happened to my proposals."""
+    limit = _clamp(limit, 1, 50, 10)
+    mine, _, _ = _run(graph, f"""
+MATCH (inv:Investigation) WHERE inv.run_by_email = $email
+OPTIONAL MATCH (inv)-[:STEP]->(t:ToolCall)
+WITH inv, count(t) AS steps
+RETURN inv.id AS id, inv.question AS question, inv.status AS status, inv.verdict AS verdict,
+       inv.confidence AS confidence, inv.started_at AS started_at, steps
+ORDER BY started_at DESC LIMIT {limit}""", {"email": email})
+    proposals, _, _ = _run(graph, f"""
+MATCH (d:Decision)-[:IN]->(inv:Investigation)
+WHERE inv.run_by_email = $email AND d.actor = 'agent' AND d.status IN ['proposed', 'approved', 'rejected']
+RETURN d.id AS decision_id, d.action_requested AS action_requested, d.action_final AS action_final,
+       d.status AS status, d.policy_rule AS policy_rule, d.ts AS ts, d.reviewed_by_name AS reviewed_by_name,
+       d.reviewed_by AS reviewed_by_role, d.reviewed_at AS reviewed_at, d.review_note AS review_note,
+       inv.id AS investigation_id, inv.question AS question
+ORDER BY ts DESC LIMIT {limit}""", {"email": email})
+    counts = {s: sum(1 for p in proposals if p["status"] == s) for s in ("proposed", "approved", "rejected")}
+    return {"investigations": mine, "proposals": proposals, "proposal_counts": counts}
+
+
+def oversight(graph, limit: int = 15) -> Dict:
+    """Supervisor home: approvals with who sent them, STR drafts, team activity,
+    and how often the guardrails held the agent back."""
+    limit = _clamp(limit, 1, 50, 15)
+    box = inbox(graph, limit)
+    pending = box["pending_decisions"]
+    now = time.time()
+    for p in pending:
+        p["age_minutes"] = round((now - float(p.get("ts") or now)) / 60, 1)
+    team, _, _ = _run(graph, """
+MATCH (inv:Investigation) WHERE inv.started_at >= $since
+RETURN coalesce(inv.run_by_name, 'Unknown') AS name, inv.run_by_role AS role, count(inv) AS investigations,
+       sum(CASE WHEN inv.verdict = 'ESCALATE' THEN 1 ELSE 0 END) AS escalate_verdicts,
+       max(inv.started_at) AS last_active
+ORDER BY investigations DESC""", {"since": now - 7 * 86400})
+    decisions, _, _ = _run(graph, """
+MATCH (d:Decision) WHERE d.actor = 'agent'
+RETURN d.status AS status, d.policy_rule AS rule, count(d) AS n""")
+    by_status: Dict[str, int] = {}
+    by_rule: Dict[str, int] = {}
+    for r in decisions:
+        by_status[r["status"]] = by_status.get(r["status"], 0) + r["n"]
+        by_rule[r["rule"]] = by_rule.get(r["rule"], 0) + r["n"]
+    held = sum(n for rule, n in by_rule.items() if rule and ("downgraded" in rule or rule.startswith(("P0", "P4"))))
+    verdicts, _, _ = _run(graph, "MATCH (inv:Investigation) WHERE inv.status = 'complete' "
+                                 "RETURN inv.verdict_json AS j")
+    adjusted = capped = 0
+    for (row) in verdicts:
+        try:
+            g = (json.loads(row["j"] or "{}") or {}).get("grounding") or {}
+        except Exception:
+            g = {}
+        adjusted += bool(g.get("adjusted"))
+        capped += bool(g.get("confidence_capped"))
+    reviews, _, _ = _run(graph, """
+MATCH (h:Decision {actor: 'human'})-[rv]->(d:Decision)-[:IN]->(inv:Investigation)
+RETURN h.name AS reviewer, type(rv) AS review, h.note AS note, h.ts AS ts, d.action_final AS action,
+       inv.id AS investigation_id, inv.run_by_name AS run_by_name
+ORDER BY ts DESC LIMIT 8""")
+    return {
+        "pending": pending,
+        "str_pending": [p for p in pending if p.get("action_final") == "draft_str"],
+        "team": team,
+        "decisions": {"by_status": by_status, "by_rule": by_rule},
+        "agent_oversight": {"held_by_policy": held, "verdicts_adjusted": adjusted,
+                            "confidence_capped": capped, "investigations_completed": len(verdicts)},
+        "recent_reviews": reviews,
+        "counts": box["counts"],
+    }
+
+
+def policy_log(graph, limit: int = 20) -> List[Dict]:
+    """Admin: every time the policy denied or downgraded what the agent asked for."""
+    rows, _, _ = _run(graph, f"""
+MATCH (d:Decision)-[:IN]->(inv:Investigation)
+WHERE d.actor = 'agent' AND (d.status = 'denied' OR d.action_final <> d.action_requested)
+RETURN d.id AS decision_id, d.action_requested AS requested, d.action_final AS final, d.status AS status,
+       d.policy_rule AS rule, d.policy_rationale AS rationale, d.ts AS ts,
+       inv.id AS investigation_id, inv.run_by_name AS run_by_name
+ORDER BY ts DESC LIMIT {_clamp(limit, 1, 100, 20)}""")
+    return rows

@@ -10,11 +10,19 @@ import json
 import os
 from typing import Callable, Dict, Optional
 
-from fastapi import Depends, FastAPI, HTTPException, Query
+from fastapi import Depends, FastAPI, Header, HTTPException, Query
 from fastapi.responses import StreamingResponse
 
 from rbac import get_role, require
 from text_ascii import asciify
+
+
+def get_user(x_user_email: Optional[str] = Header(default=None), x_user_name: Optional[str] = Header(default=None),
+             x_user_role: Optional[str] = Header(default=None)) -> Dict:
+    """Who is acting (demo sign-in sends these headers). Used for attribution only;
+    permissions still come from the role via rbac.require."""
+    clean = lambda v, n: (v or "").strip()[:n]
+    return {"email": clean(x_user_email, 120).lower(), "name": clean(x_user_name, 80), "role": clean(x_user_role, 20).upper()}
 
 
 def register(app: FastAPI, state: Dict, invalidate_caches: Callable[[], None]) -> None:
@@ -71,7 +79,7 @@ def register(app: FastAPI, state: Dict, invalidate_caches: Callable[[], None]) -
     # -- agent -----------------------------------------------------------------
 
     @app.post("/api/agent/investigate")
-    async def agent_investigate(body: dict, role: str = Depends(get_role)):
+    async def agent_investigate(body: dict, role: str = Depends(get_role), user: Dict = Depends(get_user)):
         require("agent.investigate", role)
         question = (body.get("question") or "").strip()
         if not question:
@@ -97,7 +105,8 @@ def register(app: FastAPI, state: Dict, invalidate_caches: Callable[[], None]) -
         async def sse():
             iid, done = None, False
             try:
-                async for ev in run_investigation(question, graph=g, graph_tools=graph_tools, mode=mode):
+                async for ev in run_investigation(question, graph=g, graph_tools=graph_tools, mode=mode,
+                                                  run_by=user if user.get("email") else None):
                     iid = ev.get("investigation_id") or iid
                     done = done or ev.get("type") == "done"
                     yield f"data: {asciify(json.dumps(ev, default=str, ensure_ascii=False))}\n\n"
@@ -161,15 +170,73 @@ def register(app: FastAPI, state: Dict, invalidate_caches: Callable[[], None]) -
             raise HTTPException(404, "investigation not found")
         return trail
 
+    @app.get("/api/agent/my")
+    def agent_my_work(user: Dict = Depends(get_user)):
+        """Investigator home: my investigations and the outcome of my proposals."""
+        if not user.get("email"):
+            raise HTTPException(400, "sign in first (X-User-Email header missing)")
+        out = _q().my_work(falkor(), user["email"])
+        out["top_incidents"] = _q().list_incidents(falkor(), limit=5)["data"]
+        return out
+
+    @app.get("/api/agent/oversight")
+    def agent_oversight(role: str = Depends(get_role)):
+        """Supervisor home: approvals, STR drafts, team activity, agent oversight."""
+        if role not in ("SUPERVISOR", "ADMIN"):
+            raise HTTPException(403, "supervisor view")
+        return _q().oversight(falkor())
+
+    @app.get("/api/agent/system")
+    async def agent_system(role: str = Depends(get_role)):
+        """Admin home: health, active brain, MCP tools, policy rules, policy log."""
+        if role != "ADMIN":
+            raise HTTPException(403, "admin view")
+        from agent import policy as P
+        from agent.investigator import pick_brain
+        from mcp_server import server as srv
+        health = {"graph_loaded": bool(state.get("graph") is not None and state["graph"].number_of_nodes()),
+                  "alerts_loaded": len(state.get("alerts") or []), "ml_bundle": bool(state.get("ml_bundle"))}
+        try:
+            ing = state.get("ingestor")
+            health["stream"] = ing.status() if ing else None
+        except Exception:  # noqa: BLE001
+            health["stream"] = None
+        try:
+            g = falkor()
+            graph_status = _q().status(g)
+            log = _q().policy_log(g)
+            health["falkordb"] = True
+        except HTTPException:
+            graph_status, log, health["falkordb"] = None, [], False
+        tools = await srv.mcp.list_tools()
+        return {
+            "health": health,
+            "graph": graph_status,
+            "brain": pick_brain(),
+            "tools": [{"name": t.name, "action": t.name in ("record_finding", "propose_action", "draft_str")} for t in tools],
+            "policy": {
+                "rules": [
+                    {"id": "P0", "name": "Floor safety", "text": "The agent can never close, clear, dismiss or de-escalate."},
+                    {"id": "P1", "name": "Escalate", "text": f"Needs a tier-1 alert, ML >= {P.ESCALATE_ML}, a cycle moving >= USD {P.ESCALATE_CYCLE_FLOW:,.0f}, an identity ring >= {P.ESCALATE_RING}, or a supervisor-confirmed account."},
+                    {"id": "P2", "name": "STR draft", "text": f"Needs a graph finding and CRITICAL severity or confidence >= {P.STR_CONFIDENCE:.0f}."},
+                    {"id": "P3", "name": "Autonomy", "text": "Monitor and EDD requests run immediately (reversible); everything else waits for a supervisor."},
+                    {"id": "P4", "name": "Human precedent", "text": f"A supervisor rejection on the same accounts in the last {P.PRECEDENT_WINDOW_DAYS} days holds new escalations at monitor."},
+                    {"id": "G", "name": "Grounding", "text": "No graph finding -> at most Review at 50%; confidence never exceeds what the trace supports."},
+                ],
+                "log": log,
+            },
+        }
+
     @app.post("/api/agent/decisions/{decision_id}/review")
-    def agent_review_decision(decision_id: str, body: dict, role: str = Depends(get_role)):
+    def agent_review_decision(decision_id: str, body: dict, role: str = Depends(get_role),
+                              user: Dict = Depends(get_user)):
         """Human gate. SUPERVISOR/ADMIN approve or reject an agent-proposed decision.
         Approving escalate / draft_str moves the linked cases to ESCALATED through
         the normal case flow (hash-chained audit + taint seeding)."""
         require("agent.decision.approve", role)
         approve = bool(body.get("approve"))
         note = (body.get("note") or "").strip()
-        rv = _q().review_decision(falkor(), decision_id, approve, role, note)
+        rv = _q().review_decision(falkor(), decision_id, approve, role, note, reviewer_name=user.get("name", ""))
         if not rv:
             raise HTTPException(409, "decision not found or already reviewed")
         moved = []

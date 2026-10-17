@@ -306,7 +306,8 @@ def _playbook_loop(sess, question, graph_tools):
 
 async def run_investigation(question: str, *, graph=None, graph_tools: bool = True, runner=None,
                             mode: Optional[str] = None, model: Optional[str] = None, max_rounds: int = 12,
-                            client=None, investigation_id: Optional[str] = None) -> AsyncIterator[Dict]:
+                            client=None, investigation_id: Optional[str] = None,
+                            run_by: Optional[Dict] = None) -> AsyncIterator[Dict]:
     from agent.runners import make_runner
     from graphdb.client import connect_from_env
 
@@ -318,7 +319,7 @@ async def run_investigation(question: str, *, graph=None, graph_tools: bool = Tr
     t0 = time.time()
     accts = [m.group(0) for m in ACCT_RE.finditer(question)]
     iid = Q.create_investigation(graph, question, mode=("graph" if graph_tools else "flat") + "/" + mode,
-                                 account_ids=accts, investigation_id=investigation_id)
+                                 account_ids=accts, investigation_id=investigation_id, run_by=run_by)
     runner = runner or make_runner()
     allowed = None if graph_tools else set(FLAT_TOOLS)
     final: Dict = {}
