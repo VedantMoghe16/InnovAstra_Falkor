@@ -39,6 +39,8 @@ VERDICTS = ("ESCALATE", "REVIEW", "CLEAR_RECOMMENDED", "UNCERTAIN")
 ACTION_TOOLS = ("record_finding", "propose_action", "draft_str")
 FLAT_TOOLS = ("get_incident", "account_profile", "search_alerts", "list_incidents") + ACTION_TOOLS
 
+GRAPH_EVIDENCE_TOOLS = ("find_cycles", "trace_funds", "k_hop_neighbourhood", "shared_identifier_ring",
+                        "community_of", "pagerank_hubs")
 INC_RE = re.compile(r"\bINC-[A-Z0-9]{1,8}\b", re.I)
 ACCT_RE = re.compile(r"\b(?:\d{3,6}-[0-9A-F]{8,10}|ACC\d{5})\b", re.I)
 
@@ -64,9 +66,12 @@ SYSTEM_PROMPT = """You are RUDRA Investigator, an AML investigation agent for an
 Your context is a FalkorDB graph: accounts, every transaction (TXN edges with tid, ts, amount, ml_score),
 alerts, incidents, identity links - and your own memory of past investigations, findings and human decisions.
 
+{schema}
+
 Method (follow it):
 1. Orient: get_incident / account_profile for what the question names. If nothing is named, list_incidents.
 2. get_playbook(<incident pattern>) and follow its tool_sequence - it is the bank's procedure for that typology.
+   Use the dedicated graph tools. run_cypher_readonly is a LAST RESORT for questions no tool answers.
 3. Do multi-hop work with the graph tools (trace_funds, find_cycles, k_hop_neighbourhood, shortest_path,
    pagerank_hubs, community_of, shared_identifier_ring). Prefer them over run_cypher_readonly.
 4. find_precedents for the key account. ONLY human-reviewed precedents (evidence_status "human-reviewed")
@@ -187,6 +192,7 @@ class _Session:
         self.typology = ""
         self.findings_recorded = 0
         self.verdict_rejections = 0
+        self.auto_candidates: List[tuple] = []   # findings derivable from graph tool output
 
     async def call(self, name: str, args: Dict) -> Dict:
         if self.allowed is not None and name not in self.allowed:
@@ -206,6 +212,15 @@ class _Session:
             Q.write_tool_call(self.graph, self.iid, self.n, env, args)
         except Exception:
             pass
+        if name in GRAPH_EVIDENCE_TOOLS and not env.get("is_error"):
+            try:
+                from agent.autopilot import interpret, Frontier
+                acct = args.get("account_id") or args.get("around_account") or ""
+                out = interpret(name, env, acct, Frontier())
+                if out and out[1] == "GRAPH":
+                    self.auto_candidates.append(out)
+            except Exception:
+                pass
         if name in ("get_incident", "account_profile") and env.get("rows"):
             d = env["data"][0]
             accts = [d["id"]] if name == "account_profile" else \
@@ -229,7 +244,7 @@ async def _llm_loop(sess: _Session, question: str, graph_tools: bool, model: str
         sess.runner.tools, sorted(sess.allowed) if sess.allowed is not None else None)
     tools = tools + [SUBMIT_VERDICT]
     tools[-1] = {**tools[-1], "cache_control": {"type": "ephemeral"}}
-    system = [{"type": "text", "text": SYSTEM_PROMPT.format(iid=sess.iid) + ("" if graph_tools else FLAT_NOTE),
+    system = [{"type": "text", "text": SYSTEM_PROMPT.format(iid=sess.iid, schema=Q.SCHEMA_PROMPT) + ("" if graph_tools else FLAT_NOTE),
                "cache_control": {"type": "ephemeral"}}]
     messages: List[Dict] = [{"role": "user", "content": question}]
     verdict = None
@@ -308,10 +323,12 @@ async def run_investigation(question: str, *, graph=None, graph_tools: bool = Tr
     allowed = None if graph_tools else set(FLAT_TOOLS)
     final: Dict = {}
     usage = None
+    sess: Optional[_Session] = None
     try:
         async with runner:
             visible = [t.name for t in runner.tools if allowed is None or t.name in allowed]
-            shown_model = model if mode == "llm" else (pick_brain()["model"] if mode == "gemini" else None)
+            shown_model = model if mode == "llm" else (
+                (model if model and model != DEFAULT_MODEL else pick_brain()["model"]) if mode == "gemini" else None)
             yield {"type": "mcp", "investigation_id": iid, "transport": runner.transport,
                    "tools": visible, "tools_total": len(runner.tools), "mode": mode,
                    "model": shown_model, "graph_tools": graph_tools}
@@ -321,7 +338,7 @@ async def run_investigation(question: str, *, graph=None, graph_tools: bool = Tr
             elif mode == "gemini":
                 from agent.gemini_brain import gemini_loop
                 loop = gemini_loop(sess, question, graph_tools, None if model == DEFAULT_MODEL else model,
-                                   max_rounds, SYSTEM_PROMPT.format(iid=iid) + ("" if graph_tools else FLAT_NOTE),
+                                   max_rounds, SYSTEM_PROMPT.format(iid=iid, schema=Q.SCHEMA_PROMPT) + ("" if graph_tools else FLAT_NOTE),
                                    SUBMIT_VERDICT, _step_event, _truncate_for_model)
             else:
                 loop = _playbook_loop(sess, question, graph_tools)
@@ -350,7 +367,21 @@ async def run_investigation(question: str, *, graph=None, graph_tools: bool = Tr
         final = {"verdict": "UNCERTAIN", "confidence": 0.0, "summary": f"Investigation aborted: {e}"}
         yield {"type": "error", "message": str(e)}
     from agent.grounding import ground_verdict
-    final = ground_verdict(final, Q.investigation_trace(graph, iid) or {})
+    notes = []
+    if mode in ("llm", "gemini") and sess is not None and sess.findings_recorded == 0 and sess.auto_candidates:
+        for claim, prov, tids, accts in sess.auto_candidates[:6]:
+            Q.write_finding(graph, iid, "[auto-recorded from tool output] " + claim, prov, accts, tids, [], 0.7)
+        notes.append(f"the model recorded no findings, so {min(len(sess.auto_candidates), 6)} were auto-recorded "
+                     "from the graph results it retrieved")
+    trace_now = Q.investigation_trace(graph, iid) or {}
+    ok, _why = check_verdict_quality(final, len(trace_now.get("findings") or []))
+    if not ok and trace_now.get("findings"):
+        claims = [f["claim"].replace("[auto-recorded from tool output] ", "") for f in trace_now["findings"][:3]]
+        final["summary"] = "Grounded summary (the model's own summary was unusable): " + " ".join(claims)
+        notes.append("the model's summary was replaced by one built from the recorded findings")
+    final = ground_verdict(final, trace_now)
+    if notes:
+        final["grounding"]["notes"] = notes
     Q.finish_investigation(graph, iid, final)
     trace = Q.investigation_trace(graph, iid) or {}
     yield {"type": "verdict", "investigation_id": iid, **final,

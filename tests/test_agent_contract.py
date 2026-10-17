@@ -257,7 +257,7 @@ def test_gemini_loop_contract(g):
         async with DirectToolRunner() as r:
             sess = _Session(g, r, iid, None)
             return [e async for e in gemini_brain.gemini_loop(
-                sess, "Investigate incident INC-T1", True, None, 6, SYSTEM_PROMPT.format(iid=iid),
+                sess, "Investigate incident INC-T1", True, None, 6, SYSTEM_PROMPT.format(iid=iid, schema=Q.SCHEMA_PROMPT),
                 SUBMIT_VERDICT, _step_event, _truncate_for_model, client=fake)]
     events = asyncio.run(go())
     steps = [e for e in events if e["type"] == "step"]
@@ -279,3 +279,21 @@ def test_gemini_schema_cleaning():
     s = _clean_schema({"type": "object", "title": "x", "properties": {
         "typology": {"anyOf": [{"type": "string"}, {"type": "null"}], "default": None, "title": "T"}}})
     assert s["properties"]["typology"]["type"] == "string" and "title" not in s
+
+
+def test_lazy_model_gets_auto_findings_and_grounded_summary(g):
+    """A model that runs graph tools but records nothing and submits 'test' still
+    leaves a checkable trace: findings are auto-recorded from tool output and the
+    summary is rebuilt from them."""
+    from agent.investigator import run_investigation
+    from agent.runners import DirectToolRunner
+    fake = FakeClient([[_tool("find_cycles", 1, account_id="A")],
+                       [_tool("submit_verdict", 2, verdict="ESCALATE", confidence=0.95, summary="test")],
+                       [_tool("submit_verdict", 3, verdict="ESCALATE", confidence=0.95, summary="test")]])
+    events = _collect(run_investigation("Investigate incident INC-T1", graph=g, runner=DirectToolRunner(),
+                                        mode="llm", client=fake))
+    v = [e for e in events if e["type"] == "verdict"][0]
+    assert any(f["claim"].startswith("[auto-recorded") and f["tids"] for f in v["findings"])
+    assert v["summary"].startswith("Grounded summary")
+    assert v["grounding"]["notes"] and v["grounding"]["graph_findings"] >= 1
+    assert v["verdict"] == "REVIEW"   # graph evidence, but no policy-endorsed escalation was proposed

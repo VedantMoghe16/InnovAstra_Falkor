@@ -137,7 +137,8 @@ def shared_identifier_ring(account_id: str) -> str:
 
 @mcp.tool()
 def run_cypher_readonly(cypher: str) -> str:
-    """Escape hatch: run one READ-ONLY Cypher query (MATCH/CALL/RETURN; writes rejected; LIMIT 50 enforced). Use only when no other tool fits."""
+    """LAST RESORT - only if no dedicated tool can answer. Runs one READ-ONLY Cypher query (writes rejected, LIMIT 50,
+    labels/relationships/properties validated against the schema; mistakes come back as an error listing valid names)."""
     return _out(Q.run_cypher_readonly(graph(), cypher))
 
 

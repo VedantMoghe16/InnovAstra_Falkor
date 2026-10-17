@@ -508,6 +508,49 @@ ORDER BY started_at DESC LIMIT {limit}"""
                     timed_out=to, note=note)
 
 
+SCHEMA_LABELS = {
+    "Account": {"id", "name", "type", "branch", "risk_score", "risk_level", "pr", "community", "lp_community",
+                "source", "is_mule", "review_status", "reviewed_at", "reviewed_decision"},
+    "Alert": {"alert_id", "pattern_type", "severity", "confidence", "tier", "source", "ml_score", "total_flow",
+              "total_flow_usd", "description", "corroborated_by"},
+    "Incident": {"incident_id", "primary_pattern", "severity", "total_flow", "total_flow_usd", "alert_count",
+                 "n_entities", "description"},
+    "Device": {"id"}, "IP": {"id"}, "KYC": {"id"}, "Playbook": {"typology", "fatf_code", "fatf_typology",
+    "legal_basis", "control_gap", "remediation", "tool_sequence"}, "Watchlist": {"name"},
+    "Investigation": {"id", "question", "mode", "typology", "verdict", "confidence", "summary", "status",
+                      "started_at", "finished_at"},
+    "Finding": {"id", "claim", "provenance", "evidence_tids", "unverified_tids", "alert_ids", "confidence", "ts"},
+    "Decision": {"id", "action_requested", "action_final", "status", "policy_rule", "rationale", "actor", "ts"},
+    "ToolCall": {"tool", "cypher", "rows", "ms", "provenance", "ts"},
+}
+SCHEMA_RELS = {"TXN", "FLAGS", "CONTAINS", "USES", "FROM_IP", "HAS_KYC", "ABOUT", "STEP", "FOUND", "SUPPORTED_BY",
+               "CAUSED_BY", "IN", "APPROVES", "REJECTS", "PRECEDENT_FOR", "TARGETS", "ON_WATCHLIST"}
+SCHEMA_PROMPT = """Graph schema (exact names - use these, nothing else):
+  (:Account {id, type, risk_score, pr, community, lp_community, is_mule, review_status})  ids look like '222-811D80C30' or 'ACC00045'
+  (:Account)-[:TXN {tid, ts, amount, currency, amount_usd, rail, is_fraud, ml_score}]->(:Account)
+  (:Alert {alert_id, pattern_type, severity, tier, ml_score, total_flow_usd, description})-[:FLAGS]->(:Account)
+  (:Incident {incident_id, primary_pattern, severity, total_flow_usd, alert_count})-[:CONTAINS]->(:Alert)
+  (:Account)-[:USES]->(:Device {id}), -[:FROM_IP]->(:IP {id}), -[:HAS_KYC]->(:KYC {id})
+  (:Account)-[:ON_WATCHLIST]->(:Watchlist {name}); memory: (:Investigation)-[:FOUND]->(:Finding)-[:SUPPORTED_BY]->(:Account),
+  (:Decision)-[:IN]->(:Investigation), (:Decision)-[:CAUSED_BY]->(:Finding)"""
+
+
+def _schema_errors(q: str) -> List[str]:
+    errs = []
+    for lbl in set(re.findall(r"\(\s*\w*\s*:\s*`?([A-Za-z_]\w*)", q)):
+        if lbl not in SCHEMA_LABELS:
+            errs.append(f"unknown label :{lbl}")
+    for rel_group in re.findall(r"\[\s*\w*\s*:\s*([A-Za-z_|`]+)", q):
+        for rel in rel_group.replace("`", "").split("|"):
+            if rel and rel not in SCHEMA_RELS:
+                errs.append(f"unknown relationship :{rel}")
+    for lbl, props in re.findall(r"\(\s*\w*\s*:\s*([A-Za-z_]\w*)\s*\{([^}]*)\}", q):
+        for key in re.findall(r"([A-Za-z_]\w*)\s*:", props):
+            if lbl in SCHEMA_LABELS and key not in SCHEMA_LABELS[lbl]:
+                errs.append(f"unknown property {lbl}.{key}")
+    return sorted(set(errs))
+
+
 _WRITE_RE = re.compile(r"\b(CREATE|MERGE|SET|DELETE|DETACH|REMOVE|DROP|LOAD\s+CSV)\b", re.I)
 
 
@@ -518,6 +561,13 @@ def run_cypher_readonly(graph, cypher: str) -> Dict:
         return envelope("run_cypher_readonly", q, {}, [], 0.0, data={"error": "Only read queries (MATCH/CALL/WITH/UNWIND/RETURN) are allowed."})
     if _WRITE_RE.search(q) or re.search(r"db\.idx\.\w+\.create|algo\.\w+\.(write|mutate)", q, re.I):
         return envelope("run_cypher_readonly", q, {}, [], 0.0, data={"error": "Write clauses are not allowed in read-only mode."})
+    errs = _schema_errors(q)
+    if errs:
+        return envelope("run_cypher_readonly", q, {}, [], 0.0, data={
+            "error": "Query does not match the graph schema: " + "; ".join(errs) + ".",
+            "valid_labels": {k: sorted(v) for k, v in SCHEMA_LABELS.items()},
+            "valid_relationships": sorted(SCHEMA_RELS),
+            "hint": "Prefer the dedicated tools (get_incident, trace_funds, find_cycles, k_hop_neighbourhood ...)."})
     if not re.search(r"\bLIMIT\s+\d+\s*$", q, re.I):
         q += " LIMIT 50"
     try:

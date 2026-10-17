@@ -243,3 +243,12 @@ def test_precedents_mark_unreviewed_agent_proposals(g):
     mine = [r for r in env["data"] if r["investigation"] == iid]
     assert mine and mine[0]["evidence_status"].startswith("unreviewed")
     assert env["metrics"]["unreviewed"] >= 1 and "NOT evidence" in mine[0]["evidence_status"]
+
+
+def test_readonly_cypher_validates_schema(g):
+    bad = Q.run_cypher_readonly(g, "MATCH (inc:Incident {id: 'INC-T1'})-[:ALERT_IN_INCIDENT]-(al:Alert) RETURN al")
+    err = bad["data"]["error"]
+    assert "Incident.id" in err and "ALERT_IN_INCIDENT" in err
+    assert "incident_id" in bad["data"]["valid_labels"]["Incident"] and "CONTAINS" in bad["data"]["valid_relationships"]
+    ok = Q.run_cypher_readonly(g, "MATCH (i:Incident {incident_id: 'INC-T1'})-[:CONTAINS]->(al:Alert) RETURN al.alert_id AS a")
+    assert ok["rows"] == 2
