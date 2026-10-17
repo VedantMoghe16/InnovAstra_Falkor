@@ -1,11 +1,12 @@
 # Demo script — RUDRA Investigator (3 minutes)
 
-Setup before recording: FalkorDB loaded (`scripts/load_falkor.sh`), backend + frontend running, role = INVESTIGATOR, the
+Setup before recording: sign out first (user menu, top right) so the recording starts at the sign-in page. Also: FalkorDB loaded (`scripts/load_falkor.sh`), backend + frontend running, role = INVESTIGATOR, the
 FalkorDB Browser open in a second tab (http://localhost:3000, graph `rudra`). Run one investigation beforehand so the
 memory table is not empty, and **reject** one escalation as SUPERVISOR so a human precedent exists.
 
 | Time | Show | Say |
 |---|---|---|
+| 0:00 | Sign-in page -> click **Vikram Mehta (Supervisor)** -> 3-step welcome tour -> Today | "RUDRA is an AML investigator's desk for Indian banks. Sign in as a compliance supervisor; the tour says how the day works: start from Today, let the agent follow the money, you approve." |
 | 0:00 | Investigator page, status bar (119k accounts · 100k transactions · investigations in memory) | "AML alerts are the start of an investigation, not the end. RUDRA Investigator is an agent whose context is a FalkorDB graph: every account and transaction, the alerts — and its own memory of past investigations and human decisions." |
 | 0:20 | Click the quick prompt **Investigate incident INC-…** | "It discovers 18 graph tools over MCP — that's the badge at the top of the trace." |
 | 0:30 | Trace fills: `get_incident` → `get_playbook` → `trace_funds` / `find_cycles` / `k_hop` … Expand one step to show its Cypher and the ms timing. | "The bank's playbook for this typology is a node in the graph; it sets the plan. Each step is a real traversal — here the temporal-causal trace: each hop later in time, same money carried forward. Tens of milliseconds on 100k transactions." |

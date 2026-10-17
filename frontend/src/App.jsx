@@ -1,5 +1,5 @@
 import { Component, useState } from 'react';
-import { BrowserRouter, Routes, Route, NavLink, useNavigate, useLocation } from 'react-router-dom';
+import { BrowserRouter, Routes, Route, NavLink, Navigate, useNavigate, useLocation } from 'react-router-dom';
 import Dashboard from './pages/Dashboard';
 import Today from './pages/Today';
 import Cases from './pages/Cases';
@@ -20,8 +20,10 @@ import GeoMap from './pages/GeoMap';
 import Replay from './pages/Replay';
 import Collusion from './pages/Collusion';
 import Investigator from './pages/Investigator';
-import { getRole, setRole } from './api';
 import BrandMark from './components/BrandMark';
+import Login from './pages/Login';
+import WelcomeTour from './components/WelcomeTour';
+import { DEMO_PASSWORD, DEMO_USERS, getSession, initials, signIn, signOut } from './auth';
 
 class ErrorBoundary extends Component {
   state = { error: null };
@@ -108,33 +110,56 @@ const NAV_GROUPS = [
   },
 ];
 
-const ROLES = ['INVESTIGATOR', 'SUPERVISOR', 'ADMIN'];
 
-function RoleSwitcher() {
-  const [role, setLocalRole] = useState(getRole());
-  function change(r) {
-    setRole(r);
-    setLocalRole(r);
-    // Reload to refetch under the new role's permissions
-    window.location.reload();
+function UserMenu() {
+  const navigate = useNavigate();
+  const session = getSession();
+  const [open, setOpen] = useState(false);
+  if (!session) return null;
+  const others = DEMO_USERS.filter((u) => u.email !== session.email);
+  function switchTo(u) {
+    signIn(u.email, DEMO_PASSWORD);
+    window.location.assign('/');   // reload so every view refetches under the new role
+  }
+  function out() {
+    signOut();
+    navigate('/login', { replace: true });
   }
   return (
-    <label className="flex items-center gap-3 rounded-2xl bg-white px-3 py-1.5" title="Demo role gate - production uses the bank IDP">
-      <span className="flex h-8 w-8 items-center justify-center rounded-full bg-gray-900 text-xs font-semibold text-white">
-        {role.slice(0, 2)}
-      </span>
-      <span className="flex flex-col leading-tight">
-        <span className="text-[11px] text-gray-400">Signed in as</span>
-        <select
-          data-testid="role-switcher"
-          value={role}
-          onChange={(e) => change(e.target.value)}
-          className="-ml-1 cursor-pointer bg-transparent pr-1 text-sm font-medium text-gray-900 focus:outline-none"
-        >
-          {ROLES.map((r) => <option key={r} value={r}>{r.charAt(0) + r.slice(1).toLowerCase()}</option>)}
-        </select>
-      </span>
-    </label>
+    <div className="relative">
+      <button type="button" onClick={() => setOpen(!open)} aria-expanded={open} data-testid="user-menu"
+        className="flex items-center gap-3 rounded-2xl bg-white px-3 py-1.5 text-left">
+        <span className="flex h-8 w-8 items-center justify-center rounded-full bg-gray-900 text-xs font-semibold text-white">
+          {initials(session.name)}
+        </span>
+        <span className="flex flex-col leading-tight">
+          <span className="text-sm font-medium text-gray-900">{session.name}</span>
+          <span className="text-[11px] text-gray-500">{session.title}</span>
+        </span>
+        <svg className="h-4 w-4 text-gray-400" viewBox="0 0 20 20" fill="none" stroke="currentColor" strokeWidth={1.8}>
+          <path strokeLinecap="round" strokeLinejoin="round" d="M5 8l5 5 5-5" />
+        </svg>
+      </button>
+      {open && (
+        <div className="absolute right-0 z-40 mt-2 w-64 rounded-2xl bg-white p-2 shadow-lg ring-1 ring-black/5">
+          <p className="px-3 pb-1 pt-2 text-[11px] font-medium text-gray-400">Switch account</p>
+          {others.map((u) => (
+            <button key={u.email} type="button" onClick={() => switchTo(u)}
+              className="flex w-full items-center gap-3 rounded-xl px-3 py-2 text-left hover:bg-gray-50">
+              <span className="flex h-7 w-7 items-center justify-center rounded-full bg-gray-100 text-[11px] font-semibold text-gray-700">{initials(u.name)}</span>
+              <span className="min-w-0">
+                <span className="block text-sm text-gray-900">{u.name}</span>
+                <span className="block text-[11px] text-gray-500">{u.title}</span>
+              </span>
+            </button>
+          ))}
+          <div className="my-1 border-t border-gray-100" />
+          <button type="button" onClick={out} className="w-full rounded-xl px-3 py-2 text-left text-sm text-gray-700 hover:bg-gray-50">
+            Sign out
+          </button>
+        </div>
+      )}
+    </div>
   );
 }
 
@@ -250,46 +275,77 @@ function TopBar() {
           className="w-full bg-transparent text-sm text-gray-900 placeholder:text-gray-400 focus:outline-none"
         />
       </form>
-      <RoleSwitcher />
+      <UserMenu />
     </header>
   );
+}
+
+const TOUR_KEY = 'rudra_tour_seen_';
+
+function Shell() {
+  const location = useLocation();
+  const session = getSession();
+  const [tourOpen, setTourOpen] = useState(() => {
+    if (!session || !location.state?.welcome) return false;
+    try { return localStorage.getItem(TOUR_KEY + session.email) !== '1'; } catch { return false; }
+  });
+  if (!session) {
+    return <Navigate to="/login" replace state={{ from: location.pathname + location.search }} />;
+  }
+  function closeTour() {
+    setTourOpen(false);
+    try { localStorage.setItem(TOUR_KEY + session.email, '1'); } catch { /* storage blocked */ }
+  }
+  return (
+    <>
+        <div className="flex h-screen gap-3 bg-canvas p-3 text-gray-900">
+        <SideNav />
+        <main className="flex min-h-0 min-w-0 flex-1 flex-col gap-3">
+          <TopBar />
+          <div className="min-h-0 flex-1 overflow-y-auto overflow-x-hidden rounded-3xl">
+            <Routes>
+            <Route path="/" element={<Today />} />
+            <Route path="/overview" element={<Dashboard />} />
+            <Route path="/incidents" element={<Incidents />} />
+            <Route path="/cases" element={<Cases />} />
+            <Route path="/journey" element={<Journey />} />
+            <Route path="/graph" element={<Graph />} />
+            <Route path="/analytics" element={<Analytics />} />
+            <Route path="/patterns" element={<Patterns />} />
+            <Route path="/entities" element={<Entities />} />
+            <Route path="/model" element={<ModelMetrics />} />
+            <Route path="/live" element={<Live />} />
+            <Route path="/copilot" element={<Copilot />} />
+            <Route path="/sar" element={<SarReports />} />
+            <Route path="/settings" element={<Settings />} />
+            <Route path="/aa" element={<AccountAggregator />} />
+            <Route path="/simulate" element={<SimulationStudio />} />
+            <Route path="/map" element={<GeoMap />} />
+            <Route path="/replay" element={<Replay />} />
+            <Route path="/collusion" element={<Collusion />} />
+            <Route path="/investigator" element={<InvestigatorRoute />} />
+            <Route path="*" element={<NotFound />} />
+            </Routes>
+          </div>
+        </main>
+      </div>
+      {tourOpen && <WelcomeTour session={session} onClose={closeTour} />}
+    </>
+  );
+}
+
+function LoginRoute() {
+  return getSession() ? <Navigate to="/" replace /> : <Login />;
 }
 
 export default function App() {
   return (
     <ErrorBoundary>
       <BrowserRouter>
-        <div className="flex h-screen gap-3 bg-canvas p-3 text-gray-900">
-          <SideNav />
-          <main className="flex min-h-0 min-w-0 flex-1 flex-col gap-3">
-            <TopBar />
-            <div className="min-h-0 flex-1 overflow-y-auto overflow-x-hidden rounded-3xl">
-              <Routes>
-              <Route path="/" element={<Today />} />
-              <Route path="/overview" element={<Dashboard />} />
-              <Route path="/incidents" element={<Incidents />} />
-              <Route path="/cases" element={<Cases />} />
-              <Route path="/journey" element={<Journey />} />
-              <Route path="/graph" element={<Graph />} />
-              <Route path="/analytics" element={<Analytics />} />
-              <Route path="/patterns" element={<Patterns />} />
-              <Route path="/entities" element={<Entities />} />
-              <Route path="/model" element={<ModelMetrics />} />
-              <Route path="/live" element={<Live />} />
-              <Route path="/copilot" element={<Copilot />} />
-              <Route path="/sar" element={<SarReports />} />
-              <Route path="/settings" element={<Settings />} />
-              <Route path="/aa" element={<AccountAggregator />} />
-              <Route path="/simulate" element={<SimulationStudio />} />
-              <Route path="/map" element={<GeoMap />} />
-              <Route path="/replay" element={<Replay />} />
-              <Route path="/collusion" element={<Collusion />} />
-              <Route path="/investigator" element={<InvestigatorRoute />} />
-              <Route path="*" element={<NotFound />} />
-              </Routes>
-            </div>
-          </main>
-        </div>
+        <Routes>
+          <Route path="/login" element={<LoginRoute />} />
+          <Route path="/*" element={<Shell />} />
+        </Routes>
       </BrowserRouter>
     </ErrorBoundary>
   );
