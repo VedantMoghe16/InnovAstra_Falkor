@@ -502,9 +502,6 @@ export default function Cases() {
     <div className="flex h-full flex-col gap-3">
       <div className="px-2 pt-1">
         <h1 className="text-2xl font-semibold tracking-tight text-gray-900">Case Workbench</h1>
-        <p className="mt-1 max-w-2xl text-sm text-gray-500">
-          Work the queue from the top - the strongest alerts come first. Open a case to see why it was flagged, then record your decision.
-        </p>
       </div>
 
       {/* Status tabs, search and filters */}

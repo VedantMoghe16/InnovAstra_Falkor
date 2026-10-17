@@ -755,6 +755,12 @@ RETURN count(a) AS placed""", {"name": name, "accts": list(dict.fromkeys(account
     return {"watchlist": name, "accounts_placed": rows[0]["placed"] if rows else 0}
 
 
+def mark_aborted(graph, investigation_id: str) -> None:
+    """A run the client abandoned (tab closed, Stop pressed) is recorded as aborted, never left 'running'."""
+    graph.query("MATCH (inv:Investigation {id: $id}) WHERE inv.status = 'running' "
+                "SET inv.status = 'aborted', inv.finished_at = $ts", {"id": investigation_id, "ts": _now()})
+
+
 def finish_investigation(graph, investigation_id: str, verdict: Dict) -> None:
     graph.query("""
 MATCH (inv:Investigation {id: $id})

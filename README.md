@@ -1,3 +1,5 @@
+<p align="center"><img src="docs/assets/rudra-logo.png" alt="RUDRA - Fund-flow intelligence" width="560"></p>
+
 # RUDRA: Shield Against Deception
 
 > Real-time fund-flow intelligence for Indian public sector banks.

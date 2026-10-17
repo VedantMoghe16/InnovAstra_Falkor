@@ -95,12 +95,21 @@ def register(app: FastAPI, state: Dict, invalidate_caches: Callable[[], None]) -
         from agent.investigator import run_investigation
 
         async def sse():
+            iid, done = None, False
             try:
                 async for ev in run_investigation(question, graph=g, graph_tools=graph_tools, mode=mode):
+                    iid = ev.get("investigation_id") or iid
+                    done = done or ev.get("type") == "done"
                     yield f"data: {asciify(json.dumps(ev, default=str, ensure_ascii=False))}\n\n"
             except Exception as e:  # noqa: BLE001
                 yield f"data: {json.dumps({'type': 'error', 'message': str(e)})}\n\n"
                 yield f"data: {json.dumps({'type': 'done'})}\n\n"
+            finally:
+                if iid and not done:   # client went away mid-run
+                    try:
+                        _q().mark_aborted(g, iid)
+                    except Exception:  # noqa: BLE001
+                        pass
 
         return StreamingResponse(sse(), media_type="text/event-stream",
                                  headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"})

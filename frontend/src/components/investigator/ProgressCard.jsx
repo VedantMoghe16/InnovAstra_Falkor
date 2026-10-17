@@ -60,7 +60,7 @@ export default function ProgressCard({ items, mcp, seconds, subgraph }) {
           </ol>
         </div>
         <div className="lg:col-span-2">
-          <p className="mb-2 text-xs text-gray-500">Evidence so far - accounts and transactions the agent has touched</p>
+          <p className="mb-2 text-xs text-gray-500">Evidence so far</p>
           <EvidenceGraph data={subgraph} height={300} compact />
         </div>
       </div>

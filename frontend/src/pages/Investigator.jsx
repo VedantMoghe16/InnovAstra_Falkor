@@ -48,11 +48,7 @@ function Toggle({ checked, onChange, disabled, children }) {
 function EmptyStart() {
   return (
     <Card>
-      <p className="text-sm font-medium text-gray-900">Nothing investigated yet</p>
-      <p className="mt-1 max-w-2xl text-xs leading-relaxed text-gray-500">
-        Pick a suggestion above or type your own question. The agent opens the case, follows the money through the graph,
-        checks what was decided before, then gives a verdict with the evidence behind it - and proposes actions for a person to approve.
-      </p>
+      <p className="text-sm font-medium text-gray-900">No investigation yet</p>
       <ol className="mt-5 grid grid-cols-2 gap-4 sm:grid-cols-4">
         {PHASES.map(([key, label], i) => (
           <li key={key} className="text-xs">
@@ -240,7 +236,6 @@ export default function Investigator() {
       <Card>
         <SectionHeader
           title={<span className="text-2xl font-semibold tracking-tight">Investigate</span>}
-          subtitle="Ask about an incident or an account. The agent follows the money through the graph and shows its work."
         />
         <form className="flex gap-2" onSubmit={(e) => { e.preventDefault(); run(); }}>
           <input
@@ -305,7 +300,7 @@ export default function Investigator() {
       {!running && !verdict && items.length > 0 && (
         <Card>
           <p className="text-sm font-medium text-gray-900">Investigation stopped before a verdict</p>
-          <p className="mt-1 text-xs text-gray-500">The steps it completed are below. Run it again to get a verdict.</p>
+          <p className="mt-1 text-xs text-gray-500">Run it again to get a verdict.</p>
         </Card>
       )}
 
@@ -319,13 +314,11 @@ export default function Investigator() {
           {tab === 'steps' && <StepList items={items} />}
           {tab === 'money' && (
             <>
-              <p className="mb-3 text-xs text-gray-500">Accounts and transactions the findings cite, pulled live from FalkorDB. Thick dark edges are cited; hover for amounts.</p>
               <EvidenceGraph data={subgraph} height={440} />
             </>
           )}
           {tab === 'trail' && (
             <>
-              <p className="mb-3 text-xs text-gray-500">Findings -&gt; the decisions they caused -&gt; human reviews and precedents, as stored in the graph.</p>
               <DecisionTrail data={trail} />
             </>
           )}

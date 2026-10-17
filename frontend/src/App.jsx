@@ -183,10 +183,12 @@ function SideNav() {
     <aside className="flex w-64 shrink-0 flex-col rounded-3xl bg-white">
       <div className="px-6 pb-4 pt-6">
         <div className="flex items-center gap-2.5">
-          <BrandMark size={32} className="shrink-0" />
-          <span className="text-lg font-semibold tracking-tight text-gray-900">RUDRA</span>
+          <BrandMark size={36} className="shrink-0" />
+          <div className="leading-none">
+            <span className="block text-[19px] font-extrabold tracking-tight text-gray-900">RUDRA</span>
+            <span className="mt-1 block text-[11px] font-medium text-gray-500">Fund-flow intelligence</span>
+          </div>
         </div>
-        <p className="mt-1 text-xs text-gray-400">Fund-flow intelligence</p>
       </div>
       <nav className="flex-1 space-y-4 overflow-y-auto px-3 pb-4">
         {NAV_GROUPS.map((group) => {
@@ -214,9 +216,6 @@ function SideNav() {
           );
         })}
       </nav>
-      <p className="px-6 pb-5 text-[11px] leading-relaxed text-gray-400">
-        Evidence and agent memory live in the FalkorDB context graph.
-      </p>
     </aside>
   );
 }
@@ -247,7 +246,7 @@ function TopBar() {
         <input
           value={q}
           onChange={(e) => setQ(e.target.value)}
-          placeholder="Ask the investigator - e.g. Investigate incident INC-2749"
+          placeholder="Ask about an incident or account"
           className="w-full bg-transparent text-sm text-gray-900 placeholder:text-gray-400 focus:outline-none"
         />
       </form>

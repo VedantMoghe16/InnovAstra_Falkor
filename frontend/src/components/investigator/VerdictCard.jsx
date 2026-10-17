@@ -37,7 +37,7 @@ function Decision({ d, canReview, onReview }) {
     return (
       <li className="py-2.5 text-xs leading-relaxed text-gray-500">
         <span className="font-medium text-gray-700">Done: {actionLabel(d.action || d.requested)}</span>
-        {' '}- the agent did this itself (reversible); the accounts are on a watchlist in the graph.
+        {' '}<span className="text-gray-400">by the agent, reversible</span>
       </li>
     );
   }
@@ -65,7 +65,7 @@ function Decision({ d, canReview, onReview }) {
           <Button size="sm" variant="ghost" disabled={busy} onClick={() => act(false)}>Reject</Button>
         </div>
       ) : (
-        <p className="mt-2 text-xs text-gray-500">Waiting for a supervisor. Switch role at the top right to review.</p>
+        <p className="mt-2 text-xs text-gray-500">Waiting for supervisor approval.</p>
       ))}
     </li>
   );
@@ -186,7 +186,7 @@ export default function VerdictCard({ verdict, summary, canReview, onReview, rev
             Proposed actions {pending > 0 && <span className="font-normal text-[#86760f]">{pending} need{pending === 1 ? 's' : ''} approval</span>}
           </p>
           {decisions.length === 0 ? (
-            <p className="mt-2 text-xs leading-relaxed text-gray-500">No action proposed. The verdict stands as advice; nothing changes until a person acts.</p>
+            <p className="mt-2 text-xs leading-relaxed text-gray-500">No action proposed.</p>
           ) : (
             <ul className="divide-y divide-gray-100">
               {decisions.map((d) => <Decision key={d.id} d={d} canReview={canReview} onReview={onReview} />)}
@@ -195,7 +195,7 @@ export default function VerdictCard({ verdict, summary, canReview, onReview, rev
           {reviewMsg && <p className="mt-2 text-xs text-[#4d7a1a]">{reviewMsg}</p>}
           {verdict.precedents?.length > 0 && (
             <p className="mt-4 text-xs text-gray-500">
-              <span className="font-medium text-gray-700">Precedents consulted: </span>
+              <span className="font-medium text-gray-700">Precedents: </span>
               {verdict.precedents.map((p) => `${p.investigation} (${p.verdict}, ${p.action} ${p.status})`).join('; ')}
             </p>
           )}

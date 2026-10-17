@@ -260,10 +260,6 @@ export default function Incidents() {
   const header = (
     <div className="px-2 pt-1">
       <h1 className="text-2xl font-semibold tracking-tight text-gray-900">Incidents</h1>
-      <p className="mt-1 max-w-2xl text-sm text-gray-500">
-        Related alerts grouped by the accounts they share. Sort by money at risk, open one to see how it happened,
-        or hand it to the agent to follow the money.
-      </p>
     </div>
   );
 

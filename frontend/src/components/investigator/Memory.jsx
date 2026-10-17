@@ -11,11 +11,10 @@ export function MemoryList({ history, onOpen, activeId, disabled }) {
     <Card>
       <SectionHeader
         title="Investigation memory"
-        subtitle="Every investigation is stored in the FalkorDB graph. Click one to replay it."
         action={history.length > 0 ? <span className="text-xs text-gray-500">{history.length} total</span> : null}
       />
       {history.length === 0 ? (
-        <p className="text-xs text-gray-500">Nothing yet. Finished investigations appear here and become precedents for later ones.</p>
+        <p className="text-xs text-gray-500">No investigations yet.</p>
       ) : (
         <ul className="divide-y divide-gray-100">
           {history.slice(0, 8).map((h) => {
@@ -59,7 +58,7 @@ export function RemovalCompare({ runs }) {
     ['Graph findings', a.graph, b.graph], ['Tool calls', a.steps, b.steps], ['Actions', a.action, b.action]];
   return (
     <Card>
-      <SectionHeader title="Removal test" subtitle="Same question, graph tools on vs off - what the graph adds" />
+      <SectionHeader title="Removal test" subtitle="Graph tools on vs off" />
       <table className="w-full text-xs">
         <thead>
           <tr className="text-left text-gray-500">

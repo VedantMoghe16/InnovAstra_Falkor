@@ -6,7 +6,6 @@ import { getInbox, getRole, reviewDecision } from '../api';
 import { Button, Card, EmptyState, Pill, SectionHeader, Stat } from '../components/ui';
 import { formatUsd } from '../format';
 
-const INTRO_KEY = 'rudra_today_intro_dismissed';
 
 const VERDICT = {
   ESCALATE: ['orange', 'Escalate'],
@@ -25,14 +24,6 @@ const ACTION = {
 };
 
 const SEVERITY_TONE = { CRITICAL: 'orange', HIGH: 'yellow', MEDIUM: 'gray', LOW: 'gray' };
-
-function readDismissed() {
-  try {
-    return localStorage.getItem(INTRO_KEY) === '1';
-  } catch {
-    return false;
-  }
-}
 
 function ago(ts) {
   if (!ts) return '';
@@ -57,35 +48,6 @@ function VerdictPill({ verdict, status }) {
   if (!verdict) return <Pill tone="gray">{status === 'running' ? 'Running' : 'No verdict'}</Pill>;
   const [tone, label] = VERDICT[verdict] || ['gray', verdict];
   return <Pill tone={tone}>{label}</Pill>;
-}
-
-function HowItWorks({ onDismiss }) {
-  const steps = [
-    ['Ask', 'Type a question or pick an incident - "Investigate incident INC-2749".'],
-    ['The agent follows the money', 'It walks the transaction graph hop by hop and records every finding with its evidence.'],
-    ['You decide', 'It only proposes. A supervisor approves or rejects, and the case audit log records it.'],
-  ];
-  return (
-    <Card padded={false} className="px-6 py-4">
-      <div className="flex items-center justify-between gap-3">
-        <p className="text-xs font-medium uppercase tracking-wider text-gray-400">How RUDRA works</p>
-        <Button variant="ghost" size="sm" onClick={onDismiss}>Got it</Button>
-      </div>
-      <ol className="mt-2 grid gap-4 sm:grid-cols-3">
-        {steps.map(([title, body], i) => (
-          <li key={title} className="flex gap-3">
-            <span className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-gray-100 text-[11px] font-semibold text-gray-700">
-              {i + 1}
-            </span>
-            <div>
-              <p className="text-sm font-medium text-gray-900">{title}</p>
-              <p className="mt-0.5 text-xs leading-relaxed text-gray-500">{body}</p>
-            </div>
-          </li>
-        ))}
-      </ol>
-    </Card>
-  );
 }
 
 function DecisionRow({ d, canReview, busy, onReview, onOpen }) {
@@ -124,7 +86,6 @@ export default function Today() {
   const [tick, setTick] = useState(0);
   const [busy, setBusy] = useState(null);
   const [notice, setNotice] = useState('');
-  const [introHidden, setIntroHidden] = useState(readDismissed);
 
   useEffect(() => {
     let live = true;
@@ -139,11 +100,6 @@ export default function Today() {
     const t = setTimeout(() => setNotice(''), 6000);
     return () => clearTimeout(t);
   }, [notice]);
-
-  function dismissIntro() {
-    setIntroHidden(true);
-    try { localStorage.setItem(INTRO_KEY, '1'); } catch { /* storage blocked */ }
-  }
 
   const open = (id) => navigate(`/investigator?open=${encodeURIComponent(id)}`);
   const investigate = (id) => navigate(`/investigator?q=${encodeURIComponent(`Investigate incident ${id}`)}`);
@@ -166,10 +122,6 @@ export default function Today() {
   const header = (
     <div className="px-2 pt-1">
       <h1 className="text-2xl font-semibold tracking-tight text-gray-900">{greeting()}, {roleName}</h1>
-      <p className="mt-1 max-w-2xl text-sm text-gray-500">
-        RUDRA watches fund flows across the bank, flags suspicious patterns, and lets an agent follow the money
-        through the graph so you can decide quickly with the evidence in front of you.
-      </p>
     </div>
   );
 
@@ -201,7 +153,6 @@ export default function Today() {
     <div className="space-y-3 pb-6">
       {header}
 
-      {!introHidden && <HowItWorks onDismiss={dismissIntro} />}
 
       <Card padded={false} className="px-6 py-4">
         <div className="grid grid-cols-2 gap-6 md:grid-cols-4">
@@ -225,9 +176,7 @@ export default function Today() {
           <Card>
             <SectionHeader
               title="Needs your decision"
-              subtitle={canReview
-                ? 'The agent proposed these actions. Nothing happens until you approve.'
-                : 'Proposals waiting for a supervisor. Switch role to Supervisor to approve.'}
+              subtitle={canReview ? null : 'Supervisor approval required'}
               action={pending.length ? <Pill tone="yellow">{pending.length} waiting</Pill> : null}
             />
             {loading ? (
@@ -235,7 +184,7 @@ export default function Today() {
             ) : pending.length === 0 ? (
               <EmptyState
                 title="Nothing is waiting on you"
-                body="When an investigation ends with a proposal - escalate, file an STR - it appears here for a supervisor to approve or reject."
+                body="Agent proposals land here."
               />
             ) : (
               <ul className="divide-y divide-gray-100">
@@ -248,13 +197,13 @@ export default function Today() {
           </Card>
 
           <Card>
-            <SectionHeader title="Recent investigations" subtitle="Open one to see its verdict, evidence and decision trail" />
+            <SectionHeader title="Recent investigations" />
             {loading ? (
               <p className="text-xs text-gray-400">Loading...</p>
             ) : recent.length === 0 ? (
               <EmptyState
                 title="No investigations yet"
-                body="Pick an incident on the right and press Investigate. Each run is saved to the graph with every step it took."
+                body="Start one from the list on the right."
               />
             ) : (
               <ul className="-mx-3">
@@ -278,7 +227,7 @@ export default function Today() {
         </div>
 
         <Card className="lg:col-span-2">
-          <SectionHeader title="Start an investigation" subtitle="Largest open incidents by money moved (USD equivalent)" />
+          <SectionHeader title="Start an investigation" subtitle="Largest by money moved (USD)" />
           {loading ? (
             <p className="text-xs text-gray-400">Loading...</p>
           ) : incidents.length === 0 ? (
@@ -307,9 +256,10 @@ export default function Today() {
             </ul>
           )}
           {!loading && incidents.length > 0 && (
-            <p className="mt-4 text-xs text-gray-400">
-              Or ask anything in the bar above. All {num(c.open_incidents)} incidents are on the Incidents page.
-            </p>
+            <button type="button" onClick={() => navigate('/incidents')}
+              className="mt-4 text-xs font-medium text-gray-500 hover:text-gray-900">
+              See all {num(c.open_incidents)} incidents
+            </button>
           )}
         </Card>
       </div>
