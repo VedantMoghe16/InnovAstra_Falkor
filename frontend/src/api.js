@@ -127,3 +127,13 @@ export async function streamInvestigation(body, onEvent, signal) {
 
 // Today home: pending agent proposals, recent investigations, top incidents, counts.
 export const getInbox = () => fetchAPI('/api/agent/inbox');
+
+// Incidents triage list: { severity, pattern, q, sort: usd|alerts|ml, limit, offset }.
+export function getIncidentList(params = {}) {
+  const qs = new URLSearchParams();
+  for (const [k, v] of Object.entries(params)) {
+    if (v !== undefined && v !== null && v !== '') qs.set(k, String(v));
+  }
+  const s = qs.toString();
+  return fetchAPI(`/api/agent/incidents${s ? `?${s}` : ''}`);
+}

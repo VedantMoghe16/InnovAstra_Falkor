@@ -1022,3 +1022,98 @@ ORDER BY ts DESC LIMIT {limit}""")
     }
     return {"pending_decisions": pending, "recent_investigations": list_investigations(graph, 5),
             "counts": counts}
+
+
+INCIDENT_SORTS = {
+    "usd": "total_flow_usd DESC, alert_count DESC, incident_id",
+    "alerts": "alert_count DESC, total_flow_usd DESC, incident_id",
+    "ml": "max_ml_score DESC, total_flow_usd DESC, incident_id",
+}
+
+
+def incident_list(graph, severity: Optional[str] = None, pattern: Optional[str] = None,
+                  q: Optional[str] = None, sort: str = "usd", limit: int = 50, offset: int = 0) -> Dict:
+    """Incidents triage list (UI read): filter, sort by money at risk, paginate.
+
+    Returns {items, total, patterns, severities, sort, limit, offset, ms}. Facet
+    counts honour the *other* filters (severity counts respect pattern + q,
+    pattern counts respect severity + q) so the controls never show a dead end.
+    `q` matches an incident id (CONTAINS, case-insensitive) or an exact account
+    id flagged by one of the incident's alerts (index lookup). Amounts are the
+    USD-equivalent `total_flow_usd` (the pipeline's total_flow mixes currencies).
+    """
+    t0 = time.time()
+    limit = _clamp(limit, 1, 200, 50)
+    offset = _clamp(offset, 0, 1_000_000, 0)
+    sort = sort if sort in INCIDENT_SORTS else "usd"
+    sev = (severity or "").strip().upper() or None
+    pat = (pattern or "").strip() or None
+    q = (q or "").strip() or None
+
+    params: Dict[str, Any] = {}
+    ms0 = 0.0
+    if q:
+        # account hit first (index lookup on Account.id), then one pass over incidents
+        hit_rows, ms0, _ = _run(graph, """
+MATCH (:Account {id: $q})<-[:FLAGS]-(:Alert)<-[:CONTAINS]-(i:Incident)
+RETURN DISTINCT i.incident_id AS id LIMIT 1000""", {"q": q})
+        params.update({"qu": q.upper(), "ids": [r["id"] for r in hit_rows]})
+        source = "MATCH (i:Incident) WHERE (toUpper(i.incident_id) CONTAINS $qu OR i.incident_id IN $ids)"
+    else:
+        source = "MATCH (i:Incident)"
+
+    # 1) facets + total: one cross-tab over (severity, pattern) of the q-filtered set.
+    xtab, ms1, to1 = _run(graph, source + """
+RETURN i.severity AS severity, i.primary_pattern AS pattern, count(i) AS n""", params)
+    sev_counts: Dict[str, int] = {}
+    pat_counts: Dict[str, int] = {}
+    total = 0
+    for r in xtab:
+        s, p, n = r.get("severity"), r.get("pattern"), int(r.get("n") or 0)
+        if not pat or p == pat:
+            sev_counts[s] = sev_counts.get(s, 0) + n
+        if not sev or s == sev:
+            pat_counts[p] = pat_counts.get(p, 0) + n
+        if (not sev or s == sev) and (not pat or p == pat):
+            total += n
+    severities = [{"severity": s, "count": n} for s, n in
+                  sorted(sev_counts.items(), key=lambda kv: -SEV_RANK.get(kv[0] or "", -1))]
+    patterns = [{"pattern": p, "count": n} for p, n in sorted(pat_counts.items(), key=lambda kv: (-kv[1], str(kv[0])))]
+
+    # 2) the page. usd/alerts sort on Incident properties and aggregate alerts for
+    #    the page only; ml has to aggregate before ordering.
+    conds = []
+    if sev:
+        conds.append("i.severity = $severity")
+        params["severity"] = sev
+    if pat:
+        conds.append("i.primary_pattern = $pattern")
+        params["pattern"] = pat
+    where = ((" AND " if q else "WHERE ") + " AND ".join(conds)) if conds else ""
+    page = f"SKIP {offset} LIMIT {limit}"
+    agg = """
+OPTIONAL MATCH (i)-[:CONTAINS]->(al:Alert)
+WITH i, max(al.ml_score) AS max_ml_score,
+     min(CASE WHEN al.tier > 0 THEN al.tier ELSE null END) AS top_tier"""
+    proj = """i.incident_id AS incident_id, i.primary_pattern AS primary_pattern, i.severity AS severity,
+       coalesce(i.total_flow_usd, 0.0) AS total_flow_usd, coalesce(i.alert_count, 0) AS alert_count,
+       coalesce(i.n_entities, 0) AS n_entities"""
+    if sort == "ml":
+        cypher = f"""{source}
+{where}{agg}
+WITH i, top_tier, max_ml_score
+RETURN {proj}, top_tier, max_ml_score
+ORDER BY {INCIDENT_SORTS[sort]} {page}"""
+    else:
+        cypher = f"""{source}
+{where}
+WITH i, coalesce(i.total_flow_usd, 0.0) AS total_flow_usd, coalesce(i.alert_count, 0) AS alert_count,
+     i.incident_id AS incident_id
+ORDER BY {INCIDENT_SORTS[sort]} {page}{agg}
+RETURN {proj}, top_tier, max_ml_score
+ORDER BY {INCIDENT_SORTS[sort]}"""
+    items, ms2, to2 = _run(graph, cypher, params) if total else ([], 0.0, False)
+    return {"items": items, "total": total, "patterns": patterns, "severities": severities,
+            "sort": sort, "limit": limit, "offset": offset,
+            "ms": round(ms0 + ms1 + ms2, 2), "roundtrip_ms": round((time.time() - t0) * 1000, 1),
+            "timed_out": bool(to1 or to2)}

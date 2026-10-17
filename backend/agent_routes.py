@@ -118,6 +118,17 @@ def register(app: FastAPI, state: Dict, invalidate_caches: Callable[[], None]) -
         out["top_incidents"] = Q.list_incidents(g, limit=5)["data"]
         return out
 
+    @app.get("/api/agent/incidents")
+    def agent_incidents(severity: Optional[str] = None, pattern: Optional[str] = None,
+                        q: Optional[str] = None, sort: str = "usd",
+                        limit: int = Query(50, ge=1, le=200), offset: int = Query(0, ge=0)):
+        """Incidents triage list: filter by severity / pattern / search, sort by USD-equivalent
+        flow, alert count or top ML score, paginate. Facet counts for the filter controls."""
+        if sort not in ("usd", "alerts", "ml"):
+            raise HTTPException(400, "sort must be usd, alerts or ml")
+        return _q().incident_list(falkor(), severity=severity, pattern=pattern, q=q,
+                                  sort=sort, limit=limit, offset=offset)
+
     @app.get("/api/agent/investigations/{investigation_id}")
     def agent_investigation(investigation_id: str):
         Q = _q()
