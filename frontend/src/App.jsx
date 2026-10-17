@@ -21,6 +21,7 @@ import Replay from './pages/Replay';
 import Collusion from './pages/Collusion';
 import Investigator from './pages/Investigator';
 import { getRole, setRole } from './api';
+import BrandMark from './components/BrandMark';
 
 class ErrorBoundary extends Component {
   state = { error: null };
@@ -181,10 +182,8 @@ function SideNav() {
   return (
     <aside className="flex w-64 shrink-0 flex-col rounded-3xl bg-white">
       <div className="px-6 pb-4 pt-6">
-        <div className="flex items-center gap-2">
-          <span className="flex h-8 w-8 items-center justify-center rounded-xl bg-gray-900">
-            <span className="h-3 w-3 rounded-sm bg-lime" />
-          </span>
+        <div className="flex items-center gap-2.5">
+          <BrandMark size={32} className="shrink-0" />
           <span className="text-lg font-semibold tracking-tight text-gray-900">RUDRA</span>
         </div>
         <p className="mt-1 text-xs text-gray-400">Fund-flow intelligence</p>
