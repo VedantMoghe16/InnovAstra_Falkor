@@ -15,7 +15,8 @@ import os
 import time
 from typing import Any, AsyncIterator, Dict, List, Optional
 
-PREFERRED = ("gemini-3-pro", "gemini-3-flash", "gemini-2.5-pro", "gemini-2.5-flash")
+# Google's "-latest" aliases track the newest GA model; fall back to pinned families.
+PREFERRED = ("gemini-pro-latest", "gemini-flash-latest", "gemini-3.1-pro", "gemini-2.5-pro", "gemini-2.5-flash")
 _MODEL_CACHE: Dict[str, Any] = {"model": None, "at": 0.0, "ok": None, "reason": ""}
 
 
@@ -37,7 +38,8 @@ def resolve_model(ttl: float = 600.0) -> Dict[str, Any]:
     forced = os.environ.get("RUDRA_GEMINI_MODEL")
     try:
         names = []
-        for m in _client().models.list():
+        client = _client()  # keep a reference: the SDK closes the client when it is garbage-collected
+        for m in client.models.list():
             actions = getattr(m, "supported_actions", None) or []
             if not actions or "generateContent" in actions:
                 names.append(m.name.split("/")[-1])
