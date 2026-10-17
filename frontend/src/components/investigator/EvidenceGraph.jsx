@@ -11,7 +11,7 @@ const LEGEND = [
   ['#161814', 'Shared device / IP / KYC', 'dot'],
 ];
 
-export default function EvidenceGraph({ data, height = 360 }) {
+export default function EvidenceGraph({ data, height = 360, compact = false }) {
   const wrap = useRef(null);
   const fg = useRef(null);
   const [width, setWidth] = useState(600);
@@ -38,8 +38,8 @@ export default function EvidenceGraph({ data, height = 360 }) {
   return (
     <div ref={wrap}>
       {graphData.nodes.length === 0 ? (
-        <div className="flex items-center justify-center rounded-2xl bg-gray-50 text-xs text-gray-400" style={{ height }}>
-          The evidence subgraph builds up here as the agent cites accounts and transactions.
+        <div className="flex items-center justify-center rounded-2xl bg-gray-50 px-6 text-center text-xs text-gray-500" style={{ height }}>
+          {compact ? 'Accounts appear here as the agent touches them.' : 'The money trail builds up here as the agent cites accounts and transactions.'}
         </div>
       ) : (
         <div className="overflow-hidden rounded-2xl bg-gray-50">
@@ -80,6 +80,7 @@ export default function EvidenceGraph({ data, height = 360 }) {
           />
         </div>
       )}
+      {!compact && (
       <div className="mt-3 flex flex-wrap gap-x-4 gap-y-1.5 text-[11px] text-gray-500">
         {LEGEND.map(([c, label, kind]) => (
           <span key={label} className="flex items-center gap-1.5">
@@ -88,6 +89,7 @@ export default function EvidenceGraph({ data, height = 360 }) {
           </span>
         ))}
       </div>
+      )}
     </div>
   );
 }

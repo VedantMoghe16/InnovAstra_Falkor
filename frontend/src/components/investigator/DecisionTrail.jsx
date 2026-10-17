@@ -44,7 +44,7 @@ export default function DecisionTrail({ data, height = 420 }) {
   return (
     <div ref={wrap}>
       {graphData.nodes.length === 0 ? (
-        <div className="flex items-center justify-center rounded-2xl bg-gray-50 text-xs text-gray-400" style={{ height }}>
+        <div className="flex items-center justify-center rounded-2xl bg-gray-50 px-6 text-center text-xs text-gray-500" style={{ height }}>
           The decision trail appears when an investigation finishes.
         </div>
       ) : (

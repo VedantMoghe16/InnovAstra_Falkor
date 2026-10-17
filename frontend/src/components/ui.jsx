@@ -99,12 +99,13 @@ export function Tabs({ tabs, value, onChange }) {
 }
 
 // Progressive disclosure: technical detail (Cypher, raw JSON) stays one click away.
-export function Disclosure({ label = 'Show details', children, defaultOpen = false }) {
+export function Disclosure({ label = 'Show details', closeLabel, children, defaultOpen = false }) {
   const [open, setOpen] = useState(defaultOpen);
+  const hide = closeLabel || (label.startsWith('Show ') ? `Hide ${label.slice(5)}` : `Hide ${label.toLowerCase()}`);
   return (
     <div>
       <button type="button" onClick={() => setOpen(!open)} className="text-xs font-medium text-gray-500 underline-offset-2 hover:text-gray-900 hover:underline">
-        {open ? 'Hide details' : label}
+        {open ? hide : label}
       </button>
       {open && <div className="mt-2">{children}</div>}
     </div>
