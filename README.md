@@ -342,7 +342,7 @@ Only public and synthetic data. No private, personal or restricted information i
 
 | Member |
 |---|
-| Anant Asati |
+| Harshit Singh Bhandari |
 | Vedant Moghe |
 | KanakMurthy Hawale |
 | Kartikya Saini |
