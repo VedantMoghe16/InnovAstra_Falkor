@@ -167,7 +167,7 @@ A live run with Gemini Pro on INC-2749 ended at ESCALATE, with confidence ground
 ## Try it
 
 - Code: https://github.com/VedantMoghe16/InnovAstra_Falkor
-- Live demo: LIVE_DEMO_URL
+- Live demo: https://rudra-investigator.vercel.app (demo accounts on the sign-in page; FalkorDB Cloud free tier, 35,000-transaction sample)
 - Video: VIDEO_URL
 
 ```bash

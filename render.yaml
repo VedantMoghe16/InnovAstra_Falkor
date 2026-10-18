@@ -16,7 +16,7 @@ services:
       - key: RUDRA_LLM_RUNS_PER_HOUR
         value: "20"
       - key: RUDRA_GEMINI_MODEL
-        value: gemini-pro-latest
+        value: gemini-2.5-flash
       - key: STREAM_BACKEND
         value: inproc
       - key: FALKORDB_GRAPH

@@ -1,5 +1,18 @@
 # Live deployment
 
+## What is live (free tiers, no card)
+
+| Part | Where | Notes |
+|---|---|---|
+| UI | Vercel: https://rudra-investigator.vercel.app | `frontend/`, `VITE_API_BASE` = the Render URL |
+| API | Render free web service (Singapore): https://rudra-api-xnbf.onrender.com | `render.yaml`, built from `Dockerfile.deploy`; prebuilt artefacts come from the `data-v1` GitHub release; `RUDRA_LITE=1` keeps it under 512 MB (~330 MB peak); `RUDRA_LLM_RUNS_PER_HOUR=20` caps paid LLM runs |
+| Graph | FalkorDB Cloud free tier (AWS ap-south-1) | 35,000-transaction evidence-preserving sample, 57 of 100 MB; PageRank/WCC/label propagation run in FalkorDB |
+| Keep-alive | `.github/workflows/keepalive.yml` | pings `/api/health` and `/api/graphdb/status` every 10 min (repo variable `LIVE_API_URL`) |
+
+Why these limits: the full API needs ~900 MB (the in-memory NetworkX graph alone is ~500 MB), and every no-card host caps at 512 MB; the 100 MB FalkorDB Cloud tier ran out of memory computing graph algorithms on a 60,000-transaction load.
+
+The sections below are the original Railway-style recipe.
+
 Topology: **FalkorDB** (Railway service from the `falkordb/falkordb` image, or FalkorDB Cloud) ← **API** (Railway, `Dockerfile.deploy`, ships the prebuilt pipeline artefacts and self-loads the graph on first boot) ← **UI** (Vercel, static Vite build pointing at the API).
 
 ## 0. Build artefacts locally (once)
