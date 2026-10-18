@@ -100,7 +100,7 @@ Two interchangeable brains drive the same tools and write the same trace:
 ### Where the graph decides, not the model
 
 1. **Policy evidence comes from the graph.** `propose_action` does not trust the model's description of the evidence; `gather_policy_evidence` re-reads the investigation's own ToolCalls, Findings and the alerts flagging the cited accounts.
-2. **Floor safety.** The agent can never close, clear, dismiss or de-escalate (rule P0). Escalation needs a tier-1 alert, ML ≥ 0.80, a cycle moving ≥ ₹2 lakh, or an identity ring of ≥ 3 (P1). An STR draft needs a GRAPH-provenance finding plus CRITICAL severity or confidence ≥ 85 (P2), mirroring the PMLA §12 bar already used in `fatf_typology`.
+2. **Floor safety.** The agent can never close, clear, dismiss or de-escalate (rule P0). Escalation needs a tier-1 alert, ML ≥ 0.80, a cycle moving ≥ USD 10,000 (USD-equivalent), a supervisor-confirmed account, or an identity ring of ≥ 3 (P1). An STR draft needs a GRAPH-provenance finding plus CRITICAL severity or confidence ≥ 85 (P2), mirroring the PMLA §12 bar already used in `fatf_typology`.
 3. **Human precedent wins.** If a supervisor rejected a decision on these accounts in the last 30 days, a new escalation is held at `monitor` (P4). That rejection was written to the graph; the next investigation finds it by traversal.
 4. **Provenance is checkable.** Findings must cite tids; `record_finding` reports which cited tids actually exist.
 5. **Tiered autonomy.** Reversible, low-impact actions (`monitor`, `request_edd`) are executed by the agent itself: the accounts get an `ON_WATCHLIST` edge recording the investigation, decision and reason. `open_case`, `escalate` and `draft_str` wait for a supervisor.

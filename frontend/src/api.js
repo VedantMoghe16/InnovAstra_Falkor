@@ -94,6 +94,7 @@ export async function downloadFromAPI(path, filename) {
 }
 
 // -- FalkorDB context graph + investigation agent ---------------------------
+export const getHealth = () => fetchAPI('/api/health');
 export const getGraphdbStatus = () => fetchAPI('/api/graphdb/status');
 export const getGraphdbTools = () => fetchAPI('/api/graphdb/tools');
 export const getInvestigations = () => fetchAPI('/api/agent/investigations');

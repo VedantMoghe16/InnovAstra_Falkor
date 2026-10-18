@@ -1,4 +1,5 @@
-import { Component, useState } from 'react';
+import { Component, useEffect, useState } from 'react';
+import { getHealth } from './api';
 import { BrowserRouter, Routes, Route, NavLink, Navigate, useNavigate, useLocation } from 'react-router-dom';
 import Dashboard from './pages/Dashboard';
 import Today from './pages/Today';
@@ -304,6 +305,25 @@ function TopBar() {
 
 const TOUR_KEY = 'rudra_tour_seen_';
 
+// Pages that read the in-memory transaction graph, which the lean live server skips.
+const FULL_STACK_ONLY = ['/graph', '/journey', '/entities', '/replay', '/simulate', '/patterns'];
+
+function LiteNote() {
+  const { pathname } = useLocation();
+  const [lite, setLite] = useState(false);
+  useEffect(() => {
+    getHealth().then((h) => setLite(Boolean(h.lite))).catch(() => {});
+  }, []);
+  if (!lite || !FULL_STACK_ONLY.some((p) => pathname.startsWith(p))) return null;
+  return (
+    <div className="mb-3 rounded-2xl bg-white px-5 py-3 text-sm text-gray-600">
+      <span className="mr-2 inline-block h-2 w-2 rounded-full bg-[#f2c94c]" />
+      The live demo runs a lean server without the in-memory transaction graph, so this page is empty here.
+      Run it locally with <code className="rounded bg-gray-100 px-1">docker compose up</code> to see it with data.
+    </div>
+  );
+}
+
 function Shell() {
   const location = useLocation();
   const session = getSession();
@@ -325,6 +345,7 @@ function Shell() {
         <main className="flex min-h-0 min-w-0 flex-1 flex-col gap-3">
           <TopBar />
           <div className="min-h-0 flex-1 overflow-y-auto overflow-x-hidden rounded-3xl">
+            <LiteNote />
             <Routes>
             <Route path="/" element={<RoleHome />} />
             <Route path="/today" element={<Today />} />

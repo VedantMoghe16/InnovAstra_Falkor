@@ -13,7 +13,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends libgomp1 \
     && rm -rf /var/lib/apt/lists/*
 
 COPY requirements.txt .
-RUN pip install --no-cache-dir -r requirements.txt
+RUN pip install --no-cache-dir --default-timeout=120 --retries 5 -r requirements.txt
 
 COPY src/ ./src/
 COPY backend/ ./backend/
@@ -21,6 +21,7 @@ COPY scripts/deploy_entrypoint.sh ./scripts/
 COPY data/README.md ./data/
 COPY data/ibm_aml/ ./data/ibm_aml/
 COPY data/ml/ibm_aml/ ./data/ml/ibm_aml/
+RUN rm -f data/ml/ibm_aml/tgn/model.pt   # served from predictions.json; weights never loaded
 COPY data/collusion/ ./data/collusion/
 
 ENV PYTHONUNBUFFERED=1 \
@@ -28,6 +29,11 @@ ENV PYTHONUNBUFFERED=1 \
     STREAM_BACKEND=inproc \
     RUDRA_SKIP_WARM=1 \
     FALKORDB_GRAPH=rudra
+
+# Run as uid 1000 (required by Hugging Face Spaces; harmless elsewhere). The API writes
+# the case DB and SAR PDFs under data/, so the app dir must be writable by that user.
+RUN useradd -m -u 1000 rudra && chown -R rudra /app
+USER rudra
 
 EXPOSE 8000
 # Waits for FalkorDB, self-loads the context graph if empty, then serves the API.

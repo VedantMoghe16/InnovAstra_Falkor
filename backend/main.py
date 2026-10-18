@@ -175,6 +175,10 @@ def run_pipeline():
     state["loaded"] = False
 
 
+# RUDRA_LITE=1: lean live-demo profile for 512 MB hosts (see load_or_generate).
+LITE = os.environ.get("RUDRA_LITE", "").lower() in ("1", "true", "yes")
+
+
 def load_or_generate():
     if state["loaded"]:
         return
@@ -200,8 +204,11 @@ def load_or_generate():
 
     with open(os.path.join(VARIANT_DIR, "fraud_alerts.json")) as f:
         state["alerts"] = json.load(f)
-    with open(os.path.join(VARIANT_DIR, "risk_scores.json")) as f:
-        state["risk_scores"] = json.load(f)
+    if LITE:
+        state["risk_scores"] = {}
+    else:
+        with open(os.path.join(VARIANT_DIR, "risk_scores.json")) as f:
+            state["risk_scores"] = json.load(f)
     with open(os.path.join(VARIANT_DIR, "detection_summary.json")) as f:
         state["summary"] = json.load(f)
     with open(os.path.join(VARIANT_DIR, "fraud_cases.json")) as f:
@@ -215,7 +222,9 @@ def load_or_generate():
         state["incidents"] = []
 
     state["ffg"] = FundFlowGraph()
-    state["graph"] = state["ffg"].build_graph(df)
+    # Lite profile (512 MB hosts): the agent works over FalkorDB, so skip the ~500 MB
+    # in-memory NetworkX graph; graph-heavy analytics pages are local-stack only.
+    state["graph"] = nx.DiGraph() if LITE else state["ffg"].build_graph(df)
 
     # ML artefacts - load BEFORE constructing the copilot so it can wire
     # SHAP-driven explanations into the explain_alert tool.
@@ -277,6 +286,8 @@ def load_or_generate():
     # Pre-build tracer auxiliary structures so per-entity flag lookups are O(1)
     # instead of recomputing from scratch on every /api/entities/{id} request.
     try:
+        if LITE:
+            raise RuntimeError("RUDRA_LITE set")
         from fund_tracer import (
             _build_txn_index, _build_baseline_stats,
             _build_burst_counts, _build_transit_ratios,
@@ -1187,8 +1198,9 @@ def health():
         checks["falkordb"] = is_reachable(timeout=1.0)
     except Exception:
         checks["falkordb"] = False
-    core_ok = checks["graph_loaded"] and checks["alerts_loaded"]
-    return {"status": "ok" if core_ok else "degraded", "variant": state.get("variant"), "checks": checks}
+    core_ok = (checks["graph_loaded"] or LITE) and checks["alerts_loaded"]
+    return {"status": "ok" if core_ok else "degraded", "variant": state.get("variant"), "checks": checks,
+            "lite": LITE}
 
 
 # -- Geo: inter-city fund flows + fraud hotspots -----------------------------

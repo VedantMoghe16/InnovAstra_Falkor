@@ -8,6 +8,8 @@ from __future__ import annotations
 
 import json
 import os
+import time
+from collections import deque
 from typing import Callable, Dict, Optional
 
 from fastapi import Depends, FastAPI, Header, HTTPException, Query
@@ -78,6 +80,21 @@ def register(app: FastAPI, state: Dict, invalidate_caches: Callable[[], None]) -
 
     # -- agent -----------------------------------------------------------------
 
+    _llm_runs: deque = deque()
+
+    def _llm_budget_ok() -> bool:
+        """RUDRA_LLM_RUNS_PER_HOUR caps LLM investigations (unset or 0 = no cap)."""
+        cap = int(os.environ.get("RUDRA_LLM_RUNS_PER_HOUR") or 0)
+        if cap <= 0:
+            return True
+        now = time.time()
+        while _llm_runs and now - _llm_runs[0] > 3600:
+            _llm_runs.popleft()
+        if len(_llm_runs) >= cap:
+            return False
+        _llm_runs.append(now)
+        return True
+
     @app.post("/api/agent/investigate")
     async def agent_investigate(body: dict, role: str = Depends(get_role), user: Dict = Depends(get_user)):
         require("agent.investigate", role)
@@ -100,10 +117,17 @@ def register(app: FastAPI, state: Dict, invalidate_caches: Callable[[], None]) -
             if not gm["ok"]:
                 raise HTTPException(400, f"Gemini unavailable ({gm['reason']}); use the autopilot")
 
-        from agent.investigator import run_investigation
+        from agent.investigator import pick_brain, run_investigation
+
+        # Public demo guard: cap paid LLM runs per hour; over the cap, use the free autopilot.
+        capped = False
+        if (mode or pick_brain()["mode"]) in ("llm", "gemini") and not _llm_budget_ok():
+            mode, capped = "playbook", True
 
         async def sse():
             iid, done = None, False
+            if capped:
+                yield f"data: {json.dumps({'type': 'thinking', 'text': 'The hourly limit for LLM runs on this demo is used up, so the graph-driven autopilot runs this one.'})}\n\n"
             try:
                 async for ev in run_investigation(question, graph=g, graph_tools=graph_tools, mode=mode,
                                                   run_by=user if user.get("email") else None):
