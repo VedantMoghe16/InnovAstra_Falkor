@@ -349,4 +349,4 @@ Only public and synthetic data. No private, personal or restricted information i
 
 ## License
 
-MIT.
+MIT. See [`LICENSE`](LICENSE).
