@@ -12,14 +12,14 @@ Built for **Graph Hacks: Context for AI Agents** (WeMakeDevs × FalkorDB, Oct 15
 |---|---|
 | **Track** | **Track 01: Agents That Act on Connected Data** |
 | Source code | https://github.com/VedantMoghe16/InnovAstra_Falkor (public) |
-| Demo video | `VIDEO_URL` |
+| Demo video | **https://youtu.be/ADuQj6ugkWc** |
 | Live deployment | **https://rudra-investigator.vercel.app** (sign in with any demo account; API on Render free tier, graph on FalkorDB Cloud free tier). If the API was asleep, the first request takes about a minute. The live graph is a 35,000-transaction sample that keeps every flagged transaction (the free tier is 100 MB), and the API runs a lean profile, so the in-memory analytics pages (network graph, fund journey) are local-only. Full local setup is [below](#run-it-locally). |
 | Graph data model | [Graph data model](#graph-data-model) |
 | Cypher queries and graph algorithms | [The Cypher the product depends on](#the-cypher-the-product-depends-on); full catalogue in [`src/graphdb/queries.py`](src/graphdb/queries.py) |
 | Setup instructions | [Run it locally](#run-it-locally) |
-| AI coding assistant disclosure | [Use of AI coding assistants](#use-of-ai-coding-assistants) |
+| AI disclosure (coding, runtime LLM, video voice-over) | [AI disclosure: who did what](#ai-disclosure-who-did-what) |
 | Data used | Public and synthetic only. See [Data](#data) |
-| Write-up | [`docs/BLOG.md`](docs/BLOG.md) |
+| Blog | **[Follow the Money, Cite the Edge](https://rudra-investigator.hashnode.dev/follow-the-money-cite-the-edge-an-aml-agent-that-may-escalate-but-never-close)** (source: [`docs/BLOG.md`](docs/BLOG.md)) |
 
 ---
 
@@ -303,12 +303,27 @@ The reused platform produces the alerts and ML scores that the graph is loaded f
 
 ---
 
-## Use of AI coding assistants
+## AI disclosure: who did what
 
-We used AI coding assistants heavily, and we are disclosing it plainly.
+Three AI tools helped build and present this project. Each had one job, and none of them got the last word. Here they all are, plus what is real.
 
-| | |
-|---|---|
+| | Tool | Its job | Where it stops |
+|---|---|---|---|
+| 🛠️ **The pair programmer** | **Claude Code** (Anthropic) | Wrote most of the code with us: Cypher queries, graph loader, MCP server, agent loop, API routes, React pages, tests, docs. Every commit carries a `Co-Authored-By: Claude` trailer. | It wrote code on request. We decided what to build, reviewed every change, and ran it against FalkorDB before committing. |
+| 🧠 **The investigator's brain** | **Gemini Pro** (Google, `gemini-pro-latest`) | The LLM inside the product. In the live demo it reads an incident, picks graph tools over MCP, and proposes findings and actions. | It only *proposes*. A deterministic policy gates every action using evidence it re-reads from FalkorDB, its verdict is capped by the trace, and a human supervisor approves anything irreversible. With no API key, a no-LLM autopilot runs instead. Claude is also supported as a brain. |
+| 🎙️ **The narrator** | **ElevenLabs** | Generated the voice-over in the [demo video](https://youtu.be/ADuQj6ugkWc). | Only the voice. |
+
+**Everything else is real.** The demo video is a screen recording of the working product, running live on real queries. The graph, the Cypher, the timings, the agent runs, the removal-test results and the bugs described in [`docs/FALKORDB.md`](docs/FALKORDB.md) and the [blog](https://rudra-investigator.hashnode.dev/follow-the-money-cite-the-edge-an-aml-agent-that-may-escalate-but-never-close) all come from running the system.
+
+**What the team did.** We chose the problem and the track. We designed the graph model (evidence, procedure and memory in one graph) and the policy rules P0–P4, and decided what the agent may and may not do. We ran and inspected every query against FalkorDB, and reviewed every change before it went in.
+
+**How we checked the AI's work.**
+- Automated tests: policy, MCP tools, and an agent contract test that uses a scripted LLM.
+- Every Cypher query run against the real graph, with timings recorded.
+- Query plans read whenever a query was slow. That is how we found the edge-index and cycle-ordering issues.
+- Results read by eye. That is how we caught the agent summing 15 currencies as if they were one, and citing its own unreviewed proposals as precedent. Both were then fixed.
+
+---|---|
 | **Tool** | Claude Code (Anthropic), running Claude Opus models |
 | **Scope** | Used throughout the hackathon build. Every commit in this repository carries a `Co-Authored-By: Claude` trailer. |
 | **What the AI did** | Wrote and refactored code on request (Cypher queries, loader, MCP server, agent loop, API routes, React pages), wrote tests, debugged failures, drafted documentation and the blog. |
