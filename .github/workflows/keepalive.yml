@@ -1,0 +1,16 @@
+# Keeps the free live demo awake during judging: Render sleeps after 15 idle
+# minutes and FalkorDB Cloud's free tier stops after a day idle. The graph status
+# call runs a real query, so it touches FalkorDB too.
+name: keep-alive
+on:
+  schedule:
+    - cron: "*/10 * * * *"
+  workflow_dispatch:
+jobs:
+  ping:
+    runs-on: ubuntu-latest
+    if: ${{ vars.LIVE_API_URL != '' }}
+    steps:
+      - run: |
+          curl -fsS --max-time 240 "${{ vars.LIVE_API_URL }}/api/health" || true
+          curl -fsS --max-time 60 "${{ vars.LIVE_API_URL }}/api/graphdb/status" -o /dev/null || true
