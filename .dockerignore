@@ -7,3 +7,5 @@ data/real/
 data/**/sar_reports/
 **/__pycache__/
 *.pyc
+**/.env
+**/.env.*

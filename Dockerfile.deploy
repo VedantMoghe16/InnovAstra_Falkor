@@ -1,8 +1,8 @@
-# Cloud image for the live demo: ships the PREBUILT pipeline artefacts (no retraining
+# Cloud image for the live demo: downloads the PREBUILT pipeline artefacts (no retraining
 # at build time) and talks to an external FalkorDB (e.g. FalkorDB Cloud).
 #
 #   python src/run_pipeline.py && scripts/load_falkor.sh      # locally, once
-#   docker build -f Dockerfile.deploy -t rudra-api .            # build context = repo, incl. data/
+#   docker build -f Dockerfile.deploy -t rudra-api .
 #
 # Runtime env: ANTHROPIC_API_KEY, FALKORDB_HOST/PORT/USERNAME/PASSWORD[/TLS], PORT (platform-provided),
 #              FALKORDB_LOAD_LIMIT (e.g. 60000 for a 100 MB FalkorDB Cloud free tier).
@@ -18,11 +18,11 @@ RUN pip install --no-cache-dir --default-timeout=120 --retries 5 -r requirements
 COPY src/ ./src/
 COPY backend/ ./backend/
 COPY scripts/deploy_entrypoint.sh ./scripts/
-COPY data/README.md ./data/
-COPY data/ibm_aml/ ./data/ibm_aml/
-COPY data/ml/ibm_aml/ ./data/ml/ibm_aml/
-RUN rm -f data/ml/ibm_aml/tgn/model.pt   # served from predictions.json; weights never loaded
-COPY data/collusion/ ./data/collusion/
+# Prebuilt pipeline artefacts come from a GitHub release, so the image builds
+# from a plain git checkout (Render, CI) without retraining.
+ARG DATA_URL=https://github.com/VedantMoghe16/InnovAstra_Falkor/releases/download/data-v1/rudra-data-ibm_aml.tar.gz
+RUN python -c "import urllib.request; urllib.request.urlretrieve('${DATA_URL}', '/tmp/data.tgz')" \
+    && tar -xzf /tmp/data.tgz -C /app && rm /tmp/data.tgz
 
 ENV PYTHONUNBUFFERED=1 \
     RUDRA_DATASET=ibm_aml \
